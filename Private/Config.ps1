@@ -21,3 +21,5 @@ function Get-NBHeaders {
         "Accept"        = "application/json"
     }
 }
+
+Export-ModuleMember -Function Set-NBConfig

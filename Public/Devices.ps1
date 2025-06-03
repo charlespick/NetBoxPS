@@ -26,3 +26,5 @@ function New-NBDevice {
 
     Invoke-NBPost -Domain "dcim/devices" -Payload $Payload
 }
+
+Export-ModuleMember -Function Get-NBDevice, New-NBDevice
