@@ -4,13 +4,20 @@ function Invoke-NBGet {
         [hashtable]$Filters
     )
 
-    $Uri = "$(Get-NBBaseUrl)api/$Domain/"
+    $BaseUrl = Get-NBBaseUrl
+    $Headers = Get-NBHeaders
+
+    if (-not $BaseUrl -or -not $Headers["Authorization"]) {
+        Write-Error "You must configure the module with Set-NBConfig before making API calls."
+        return
+    }
+
+    $Uri = "${BaseUrl}api/$Domain/"
     if ($Filters) {
         $Query = ($Filters.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "&"
         $Uri += "?$Query"
     }
 
-    $Headers = Get-NBHeaders
     $Results = @()
 
     try {
@@ -31,9 +38,16 @@ function Invoke-NBPost {
         [Parameter(Mandatory)][hashtable]$Payload
     )
 
-    $Uri = "$(Get-NBBaseUrl)api/$Domain/"
+    $BaseUrl = Get-NBBaseUrl
     $Headers = Get-NBHeaders
+
+    if (-not $BaseUrl -or -not $Headers["Authorization"]) {
+        Write-Error "You must configure the module with Set-NBConfig before making API calls."
+        return
+    }
+
     $Headers["Content-Type"] = "application/json"
+    $Uri = "${BaseUrl}api/$Domain/"
 
     try {
         return Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -Body ($Payload | ConvertTo-Json -Depth 10)
