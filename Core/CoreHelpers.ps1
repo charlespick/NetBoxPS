@@ -14,8 +14,24 @@ function Invoke-NBGet {
 
     $Uri = "${BaseUrl}api/$Domain/"
     if ($Filters) {
-        $Query = ($Filters.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "&"
-        $Uri += "?$Query"
+        $queryParts = @()
+
+        foreach ($entry in $Filters.GetEnumerator()) {
+            $key = $entry.Key.ToLower()
+            $value = $entry.Value
+
+            if ($value -is [System.Collections.IEnumerable] -and -not ($value -is [string])) {
+                foreach ($val in $value) {
+                    $queryParts += "$key=$val"
+                }
+            } else {
+                $queryParts += "$key=$value"
+            }
+        }
+
+        if ($queryParts.Count -gt 0) {
+            $Uri += "?" + ($queryParts -join "&")
+        }
     }
 
     $Results = @()

@@ -12,7 +12,8 @@ Set-NBConfig -BaseUrl "https://netbox.example.com/" -ApiToken "your-token"
 ```
 
 ## ✏️ New Functions
-The `Invoke-NBGet` and `Invoke-NBPost` wrappers are designed to make adding support for new API endpoints easier.
+The `Invoke-NBGet` and `Invoke-NBPost` wrappers are designed to make adding support for new API endpoints easier by handling JSON encoding and error handling for you. Create a new file in /Public for every object type. All files in /Public are automatically sourced into the module. 
+
 ```powershell
 # Example of adding support for adding objects of a new domain
 # This is currently unfinished and now all paremeters are supported
