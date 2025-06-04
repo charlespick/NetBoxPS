@@ -12,46 +12,55 @@ Set-NBConfig -BaseUrl "https://netbox.example.com/" -ApiToken "your-token"
 ```
 
 ## ✏️ New Functions
-The `Invoke-NBGet` and `Invoke-NBPost` wrappers are designed to make adding support for new API endpoints easier by handling JSON encoding and error handling for you. Create a new file in /Public for every object type. All files in /Public are automatically sourced into the module. 
+The module contains 4 core wrappers that make it minimal work to add support for a new type of object.
+
+The `Invoke-NBGet` and `Invoke-NBPost` wrappers take query or payload data in a hashable Powershell object and the domain of the Netbox object and construct the HTTP requests including authentication, JSON encoding, pagination, and case normalization. Most functions in this module should use these functions to send their final payload or query to the API.
+
+The `ConvertTo-NBQuery` and `ConvertTo-NBPayload` functions are more optional but still very powerful. They take `$PSBoundParameters` provided to the function and construct the filters or payload object using only the parameters used. The resulting object can be passed directly to the `Invoke-` functions.
+
+Create a new file in /Public for every object type. All files in /Public are automatically sourced into the module. 
 
 ```powershell
-# Example of adding support for adding objects of a new domain
-# This is currently unfinished and now all paremeters are supported
+# Example of adding support for querying objects of a new domain
 
 # Powershell standard verb usage
-function New-NBDevice {
-    # Specify parameters according to API documentation
+function Get-NBDevice {
+    [CmdletBinding()]
     param (
-        [Parameter(Mandatory)][int]$DeviceTypeID,
-        [Parameter(Mandatory)][int]$DeviceRoleID,
-        [Parameter(Mandatory)][int]$SiteID,
-        [Parameter(Mandatory)][string]$Name,
-        [string]$Serial,
-        [string]$Description
+        # This is not an exaustive list of available device filters for demonstration purposes
+        [string[]]$AssetTag,
+        [string[]]$Description,
+        [int[]]$Id,
+        [string[]]$Manufacturer,
+        [string[]]$Model,
+        [string[]]$Name,
+        [string[]]$Region,
+        [string[]]$Role,
+        [string[]]$Serial,
+        [string[]]$Site,
+        [string[]]$Status,
+        [string[]]$Tag,
     )
 
-    # (Optional) internal logic to prepare payload data, if needed
-
-    # Construct payload according to provided parameters
-    $Payload = @{
-        device_type = $DeviceTypeID
-        role        = $DeviceRoleID
-        site        = $SiteID
-        name        = $Name
-        serial      = $Serial
-        description = $Description
-    }
-
-    # Make API Call
-    Invoke-NBPost -Domain "dcim/devices" -Payload $Payload
+    # Build filters and make API Call
+    $filters = ConvertTo-NBQuery $PSBoundParameters
+    Invoke-NBGet -Domain "dcim/devices" -Filters $filters
 }
 
-# Get endpoints are similar
-function Get-NBDevice {
+# New- endpoints are similar
+function New-NBDevice {
+    [CmdletBinding()]
     param (
-        [Parameter(Mandatory)][string]$Name
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][int]$Device_Type,
+        [Parameter(Mandatory)][int]$Role,
+        [ValidateSet("offline", "active", "planned", "staged", "failed", "inventory")][string]$Status,
+        [array]$Tags,
+        [hashtable]$Custom_Fields
     )
-    Invoke-NBGet -Domain "dcim/devices" -Filters @{ name = $Name }
+
+    $payload = ConvertTo-NBPayload $PSBoundParameters
+    Invoke-NBPost -Domain "dcim/devices" -Payload $payload
 }
 
 # Export functions at the end of the file

@@ -65,9 +65,49 @@ function Invoke-NBPost {
     $Headers["Content-Type"] = "application/json"
     $Uri = "${BaseUrl}api/$Domain/"
 
+    # Normalize payload keys to lowercase
+    $NormalizedPayload = @{}
+
+    foreach ($entry in $Payload.GetEnumerator()) {
+        $key = $entry.Key.ToLower()
+        $value = $entry.Value
+        $NormalizedPayload[$key] = $value
+    }
     try {
-        return Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -Body ($Payload | ConvertTo-Json -Depth 10)
+        return Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -Body ($NormalizedPayload | ConvertTo-Json -Depth 10)
     } catch {
         Write-Error "POST request failed on '$Domain': $_"
     }
+}
+
+function ConvertTo-NBQuery {
+    param (
+        [hashtable]$Params
+    )
+
+    $query = @{}
+    $Params.GetEnumerator() | ForEach-Object {
+        if ($_.Key -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction')) {
+            $key = $_.Key.ToLower()
+            $query[$key] = $_.Value
+        }
+    }
+
+    return $query
+}
+
+function ConvertTo-NBPayload {
+    param (
+        [hashtable]$Params
+    )
+
+    $payload = @{}
+    $Params.GetEnumerator() | ForEach-Object {
+        if ($_.Key -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction')) {
+            $key = $_.Key.ToLower()
+            $payload[$key] = $_.Value
+        }
+    }
+
+    return $payload
 }

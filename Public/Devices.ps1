@@ -295,36 +295,47 @@ function Get-NBDevice {
         [bool]$VirtualChassisMember
     )
 
-    $filters = @{}
-    $PSBoundParameters.GetEnumerator() | ForEach-Object {
-        if ($_.Key -ne 'Verbose' -and $_.Key -ne 'Debug' -and $_.Key -ne 'ErrorAction' -and $_.Key -ne 'WarningAction' -and $_.Key -ne 'InformationAction') {
-            $filters[$_.Key -replace '_', '__'] = $_.Value
-        }
-    }
-
+    $filters = ConvertTo-NBQuery $PSBoundParameters
     Invoke-NBGet -Domain "dcim/devices" -Filters $filters
 }
 
 function New-NBDevice {
+    [CmdletBinding()]
     param (
-        [Parameter(Mandatory)][int]$DeviceTypeID,
-        [Parameter(Mandatory)][int]$DeviceRoleID,
-        [Parameter(Mandatory)][int]$SiteID,
         [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][int]$Device_Type,
+        [Parameter(Mandatory)][int]$Role,
+
+        [int]$Tenant,
+        [int]$Platform,
         [string]$Serial,
-        [string]$Description
+        [string]$Asset_Tag,
+        [int]$Site,
+        [int]$Location,
+        [int]$Rack,
+        [int]$Position,
+        [ValidateSet("front", "rear")][string]$Face,
+        [double]$Latitude,
+        [double]$Longitude,
+        [ValidateSet("offline", "active", "planned", "staged", "failed", "inventory")][string]$Status,
+        [ValidateSet("front-to-rear", "rear-to-front", "left-to-right", "right-to-left", "side-to-rear", "side-to-front", "passive")][string]$Airflow,
+        [int]$Primary_IP4,
+        [int]$Primary_IP6,
+        [int]$OOB_IP,
+        [int]$Cluster,
+        [int]$Virtual_Chassis,
+        [int]$VC_Position,
+        [int]$VC_Priority,
+        [string]$Description,
+        [string]$Comments,
+        [int]$Config_Template,
+        [string]$Local_Context_Data,
+        [array]$Tags,
+        [hashtable]$Custom_Fields
     )
 
-    $Payload = @{
-        device_type = $DeviceTypeID
-        role        = $DeviceRoleID
-        site        = $SiteID
-        name        = $Name
-        serial      = $Serial
-        description = $Description
-    }
-
-    Invoke-NBPost -Domain "dcim/devices" -Payload $Payload
+    $payload = ConvertTo-NBPayload $PSBoundParameters
+    Invoke-NBPost -Domain "dcim/devices" -Payload $payload
 }
 
 Export-ModuleMember -Function Get-NBDevice, New-NBDevice
