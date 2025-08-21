@@ -1,0 +1,41 @@
+entry
+    get schema from swagger
+    clear out build folders
+
+    (go over every) object def
+        extract the schema
+        pass to class builder (with) noun, schema, and output directory
+        keep track of built objects
+
+    (go over every) method def
+        skips "by id" endpoints because all the endpoints can take id as a param
+        extract the schema
+        extract the powershell-friendly verb from the http method
+        extract the powershell-friendly noun
+        pass to function builder (with) noun, verb, schema, output directory, list of custom objects
+
+artefacts
+    mapping of http verbs to powershell verbs
+    mapping of swagger (standard) types to powershell types (int, string, etc)
+
+helpers
+    convert to singular 
+        converts plural nouns to powershell-friendly singular nouns being mindful of odd english pluralizations like -ies
+    convert to pascal case
+        converts to powershell-friendly pascal case
+    build class
+        builds a class file that
+            stores internal hashtable mapping property names to swagger api names
+            tohashtable function goes over values and exports a hashtable with key-value pairs with api-conformant labels
+                if class is defined with nested custom types, calls tohashtable on that one to nest the hashtable inside it's own
+            defines properties with types
+            constructor defined with powershell friendly name and params
+        exports the class file to disk
+    build function
+        builds a function file that
+            exposes powershell friendly params
+            maps those internally to swagger api names
+            expands any custom types into their api-ready hashtable
+            passes a hashtable of all properties to the core function
+        exports the function file to disk
+        warns if a property type was used that isn't either defined or standard
