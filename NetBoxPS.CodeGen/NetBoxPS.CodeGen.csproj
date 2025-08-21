@@ -14,5 +14,9 @@
 		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\NetBoxSdk\NetBoxSdk.csproj" />
+	</ItemGroup>
+
 </Project>
 
