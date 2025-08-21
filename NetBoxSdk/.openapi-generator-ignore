@@ -1,0 +1,4 @@
+
+**/docs/**/*.md
+**/NetBoxSdk.Test/**/*.cs
+

@@ -16,7 +16,7 @@ namespace NetBoxPS.CodeGen.Generators
             // Take last segment, singularize and PascalCase
             var segments = clean.Split('/');
             var last = segments.Length > 0 ? segments[segments.Length - 1] : "Object";
-            last = last.EndsWith("s") ? last[..^1] : last;
+            last = last.EndsWith("s") ? last.Substring(0, last.Length - 1) : last;
 
             return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(last);
         }

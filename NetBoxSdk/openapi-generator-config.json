@@ -1,0 +1,9 @@
+{
+  "generatorName": "csharp",
+
+  "additionalProperties": {
+    "targetFramework": "netstandard2.0",
+    "packageName": "NetBoxSdk",
+    "modelPropertyNaming": "PascalCase"
+  }
+}
