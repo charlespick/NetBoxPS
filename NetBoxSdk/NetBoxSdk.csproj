@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<!-- URL to the latest spec -->
+		<OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
+		<OpenApiSpecFile>openapi.yaml</OpenApiSpecFile>
+		<GeneratedDir>Generated</GeneratedDir>
+		<PackageName>NetBoxSdk</PackageName>
+	</PropertyGroup>
+
+	<!-- Preflight check for required tools -->
+	<Target Name="CheckEnvironment" BeforeTargets="GenerateOpenApiClient">
+		<Exec Command="curl --version" ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="CurlExitCode" />
+		</Exec>
+		<Exec Command="npm --version" ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="NpmExitCode" />
+		</Exec>
+		<Exec Command="npx --version" ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="NpxExitCode" />
+		</Exec>
+		<Exec Command="java --version" ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="JavaExitCode" />
+		</Exec>
+		<Error Condition="$(CurlExitCode) != 0" Text="Missing dependency: curl is required to fetch the OpenAPI spec." />
+		<Error Condition="$(NpmExitCode) != 0" Text="Missing dependency: npm is required to install OpenAPI Generator." />
+		<Error Condition="$(NpxExitCode) != 0" Text="Missing dependency: npx is required to run OpenAPI Generator." />
+		<Error Condition="$(JavaExitCode) != 0" Text="Missing dependency: java is required to run OpenAPI Generator." />
+	</Target>
+	
+	<!-- Ensure npm packages are restored before build -->
+	<Target Name="EnsureNodeModules" BeforeTargets="GenerateOpenApiClient">
+		<Message Importance="high" Text="Running npm install to ensure OpenAPI Generator is available..." />
+		<Exec Command="npm install" WorkingDirectory="$(MSBuildProjectDirectory)" />
+	</Target>
+
+	<!-- Download the latest OpenAPI spec -->
+	<Target Name="FetchOpenApiSpec" BeforeTargets="GenerateOpenApiClient">
+		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl)" />
+		<Exec Command="curl -L -o $(OpenApiSpecFile) $(OpenApiSpecUrl)" WorkingDirectory="$(MSBuildProjectDirectory)" />
+	</Target>
+
+	<!-- Generate C# SDK from OpenAPI spec -->
+	<Target Name="GenerateOpenApiClient" BeforeTargets="BeforeBuild" DependsOnTargets="EnsureNodeModules;FetchOpenApiSpec">
+		<Message Importance="high" Text="Generating C# client from OpenAPI spec" />
+		<Exec Command="npx openapi-generator-cli generate -i $(OpenApiSpecFile) -g csharp-netcore -o $(GeneratedDir) --additional-properties=targetFramework=netstandard2.0,packageName=$(PackageName)"
+			  WorkingDirectory="$(MSBuildProjectDirectory)" />
+	</Target>
+
+	<!-- Include generated code in the project -->
+	<ItemGroup>
+		<Compile Include="$(GeneratedDir)/**/*.cs" />
+	</ItemGroup>
+
+</Project>
