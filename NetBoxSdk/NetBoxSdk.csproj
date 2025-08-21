@@ -1,12 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+	<ItemGroup>
+		<!-- JSON serialization / Utf8JsonReader, JsonTokenType, JsonPropertyName -->
+		<PackageReference Include="System.Text.Json" Version="9.0.8" />
+
+		<!-- Data annotations / IValidatableObject -->
+		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+	</ItemGroup>
+
+
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<!-- URL to the latest spec -->
 		<OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
-		<OpenApiSpecFile>openapi.yaml</OpenApiSpecFile>
+		<OpenApiSpecYaml>openapi.yaml</OpenApiSpecYaml>
+		<OpenApiSpecJson>openapi.json</OpenApiSpecJson>
 		<GeneratedDir>Generated</GeneratedDir>
 		<PackageName>NetBoxSdk</PackageName>
+		<!-- Java memory for large spec -->
+		<JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
 	</PropertyGroup>
 
 	<!-- Preflight check for required tools -->
@@ -28,7 +40,7 @@
 		<Error Condition="$(NpxExitCode) != 0" Text="Missing dependency: npx is required to run OpenAPI Generator." />
 		<Error Condition="$(JavaExitCode) != 0" Text="Missing dependency: java is required to run OpenAPI Generator." />
 	</Target>
-	
+
 	<!-- Ensure npm packages are restored before build -->
 	<Target Name="EnsureNodeModules" BeforeTargets="GenerateOpenApiClient">
 		<Message Importance="high" Text="Running npm install to ensure OpenAPI Generator is available..." />
@@ -36,21 +48,27 @@
 	</Target>
 
 	<!-- Download the latest OpenAPI spec -->
-	<Target Name="FetchOpenApiSpec" BeforeTargets="GenerateOpenApiClient">
+	<Target Name="FetchOpenApiSpec" BeforeTargets="GenerateOpenApiClient" Inputs="$(OpenApiSpecYaml)" Outputs="$(OpenApiSpecYaml)">
 		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl)" />
-		<Exec Command="curl -L -o $(OpenApiSpecFile) $(OpenApiSpecUrl)" WorkingDirectory="$(MSBuildProjectDirectory)" />
+		<Exec Command="curl -L -o $(OpenApiSpecYaml) $(OpenApiSpecUrl)" WorkingDirectory="$(MSBuildProjectDirectory)" />
+	</Target>
+
+	<!-- Convert YAML → JSON for safer generation -->
+	<Target Name="ConvertYamlToJson" BeforeTargets="GenerateOpenApiClient" Inputs="$(OpenApiSpecYaml)" Outputs="$(OpenApiSpecJson)">
+		<Message Importance="high" Text="Converting YAML to JSON to handle large spec..." />
+		<Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
 	<!-- Generate C# SDK from OpenAPI spec -->
-	<Target Name="GenerateOpenApiClient" BeforeTargets="BeforeBuild" DependsOnTargets="EnsureNodeModules;FetchOpenApiSpec">
+	<Target Name="GenerateOpenApiClient" BeforeTargets="BeforeBuild" DependsOnTargets="EnsureNodeModules;FetchOpenApiSpec;ConvertYamlToJson">
 		<Message Importance="high" Text="Generating C# client from OpenAPI spec" />
-		<Exec Command="npx openapi-generator-cli generate -i $(OpenApiSpecFile) -g csharp-netcore -o $(GeneratedDir) --additional-properties=targetFramework=netstandard2.0,packageName=$(PackageName)"
-			  WorkingDirectory="$(MSBuildProjectDirectory)" />
+		<Exec Command="npx openapi-generator-cli generate ^
+      -i &quot;$(OpenApiSpecJson)&quot; ^
+      -g csharp ^
+      -o &quot;$(GeneratedDir)&quot; ^
+      --additional-properties=targetFramework=netstandard2.0,packageName=$(PackageName)"
+		  WorkingDirectory="$(MSBuildProjectDirectory)"
+		  EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
 	</Target>
-
-	<!-- Include generated code in the project -->
-	<ItemGroup>
-		<Compile Include="$(GeneratedDir)/**/*.cs" />
-	</ItemGroup>
 
 </Project>
