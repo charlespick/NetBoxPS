@@ -6,6 +6,10 @@
 		<Nullable>enable</Nullable>
 		<OutputItemType>Analyzer</OutputItemType>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<IsPackable>false</IsPackable>
 	</PropertyGroup>
 
 	<ItemGroup>

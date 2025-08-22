@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.Build.NoTargets/3.7.0">
+  <PropertyGroup>
+    <!-- Optional, but keeps VS happy; not actually compiling anything -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Where the generated module lives (source-of-truth) -->
+    <PsModuleRoot>$(MSBuildThisFileDirectory)module</PsModuleRoot>
+    <!-- Where a “build output” copy goes, if you want one -->
+    <OutDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutDir>
+  </PropertyGroup>
+  <!-- Ensure correct build order: this project depends on the generator -->
+  <ItemGroup>
+    <ProjectReference Include="..\NetBoxPS.CodeGen\NetBoxPS.CodeGen.csproj" />
+    <ProjectReference Include="..\NetBoxSdk\NetBoxSdk.csproj" />
+  </ItemGroup>
+  <!-- Inputs that should trigger regeneration (SDK dlls, codegen exe, config, etc.) -->
+  <ItemGroup>
+    <!-- Point these at whatever your generator reads -->
+    <GeneratorInputs Include="..\NetBoxSdk\bin\$(Configuration)\net8.0\NetBoxSdk.dll" />
+    <GeneratorInputs Include="..\CodeGen\bin\$(Configuration)\net8.0\CodeGen.dll" />
+    <GeneratorInputs Include="generator.config.json" Condition="Exists('generator.config.json')" />
+  </ItemGroup>
+  <!-- Clean the module folder on Clean -->
+  <Target Name="CleanModule" BeforeTargets="Clean">
+    <RemoveDir Directories="$(PsModuleRoot)" />
+  </Target>
+  <!-- Generate the module by running Project 2 -->
+  <Target Name="GenerateModule" DependsOnTargets="Build" Inputs="@(GeneratorInputs)" Outputs="$(PsModuleRoot)\.stamp">
+    <!-- dotnet run will build CodeGen if needed and then run it -->
+    <Exec Command="dotnet run --project ..\CodeGen\CodeGen.csproj --configuration $(Configuration) -- --out &quot;$(PsModuleRoot)&quot;" />
+    <!-- Mark output for incremental builds -->
+    <Touch Files="$(PsModuleRoot)\.stamp" AlwaysCreate="true" />
+  </Target>
+  <!-- Make GenerateModule part of normal Build -->
+  <PropertyGroup>
+    <BuildDependsOn>$(BuildDependsOn);GenerateModule;StageModuleOutput</BuildDependsOn>
+  </PropertyGroup>
+  <!-- (Optional) copy the generated module into bin\ for easy discovery/testing -->
+  <Target Name="StageModuleOutput">
+    <MakeDir Directories="$(OutDir)module" />
+    <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(OutDir)module\%(RecursiveDir)" SkipUnchangedFiles="true" Condition=" '@(ModuleFiles)' != '' " />
+  </Target>
+  <!-- Everything under the generated module counts as output -->
+  <ItemGroup>
+    <ModuleFiles Include="$(PsModuleRoot)\**\*.*" />
+  </ItemGroup>
+</Project>
