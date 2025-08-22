@@ -4,11 +4,13 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
     <PackageReference Include="Polly" Version="8.6.2" />
     <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
     <PackageReference Include="System.Text.Json" Version="9.0.8" />
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+    <PackageReference Include="System.Threading.Channels" Version="9.0.8" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -20,15 +22,14 @@
     <OpenApiSpecJson>$(SchemaDir)\openapi.json</OpenApiSpecJson>
     <GeneratedDir>Generated</GeneratedDir>
     <StampFile>$(GeneratedDir)\.sdk.stamp</StampFile>
+	<PatchedStampFile>$(GeneratedDir)\.patched.stamp</PatchedStampFile>
     <PackageName>NetBoxSdk</PackageName>
     <JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
+    <RunCodegen Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipCompilerExecution)' != 'true'">true</RunCodegen>
   </PropertyGroup>
 
   <!-- Preflight check for required tools -->
-  <Target Name="CheckEnvironment"
-          DependsOnTargets=""
-          Inputs=""
-          Outputs="">
+  <Target Name="CheckEnvironment" Condition="'$(RunCodegen)' == 'true'" DependsOnTargets="" Inputs="" Outputs="">
     <Exec Command="curl --version" ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="CurlExitCode" />
     </Exec>
@@ -48,73 +49,54 @@
   </Target>
 
   <!-- Only install node modules if missing -->
-  <Target Name="EnsureNodeModules"
-          DependsOnTargets=""
-          Condition="!Exists('$(MSBuildThisFileDirectory)node_modules')">
+  <Target Name="EnsureNodeModules" Condition="'$(RunCodegen)' == 'true' and !Exists('$(MSBuildThisFileDirectory)node_modules')" DependsOnTargets="">
     <Message Importance="high" Text="node_modules not found — running npm install..." />
     <Exec Command="npm install" WorkingDirectory="$(MSBuildThisFileDirectory)" />
   </Target>
 
   <!-- Ensure schema directory exists -->
-  <Target Name="EnsureSchemaDir"
-          DependsOnTargets="">
+  <Target Name="EnsureSchemaDir" Condition="'$(RunCodegen)' == 'true'" DependsOnTargets="">
     <MakeDir Directories="$(SchemaDir)" Condition="!Exists('$(SchemaDir)')" />
   </Target>
 
-  <!-- Fetch spec ONLY if missing or remote is newer than local file. -->
+  <!-- Fetch spec ONLY if missing or local YAML is older than the stamp file -->
   <Target Name="FetchOpenApiSpec"
+          Condition="'$(RunCodegen)' == 'true'"
           DependsOnTargets="EnsureSchemaDir"
           Inputs="$(OpenApiSpecYaml)"
-          Outputs="$(OpenApiSpecYaml)">
-    <Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)" />
-    <Exec Command="curl -L -z &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+          Outputs="$(SchemaDir)\.fetched.stamp">
+    <Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (incremental)" />
+    <Exec Command="curl -L -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <WriteLinesToFile File="$(SchemaDir)\.fetched.stamp"
+                      Lines="Fetched: %(UtcNow.Identity) from $(OpenApiSpecUrl)"
+                      Overwrite="true" />
   </Target>
 
-  <!-- Convert YAML → JSON only when YAML is newer (or JSON missing) -->
+  <!-- Convert YAML → JSON only when YAML or fetched stamp is newer (or JSON missing) -->
   <Target Name="ConvertYamlToJson"
           DependsOnTargets="FetchOpenApiSpec"
-          Inputs="$(OpenApiSpecYaml)"
+          Condition="'$(RunCodegen)' == 'true'"
+          Inputs="$(OpenApiSpecYaml);$(SchemaDir)\.fetched.stamp"
           Outputs="$(OpenApiSpecJson)">
     <Message Importance="high" Text="Converting YAML to JSON (incremental)..." />
-    <Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json"
-          WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json" WorkingDirectory="$(MSBuildThisFileDirectory)" />
   </Target>
 
   <!-- Patch OpenAPI JSON after conversion -->
-  <Target Name="PatchOpenApiJson"
-          DependsOnTargets="ConvertYamlToJson"
-          Inputs="$(OpenApiSpecJson)"
-          Outputs="$(OpenApiSpecJson)">
-    <Message Importance="high" Text="Patching OpenAPI spec (fix enum names and strip null)..." />
+  <Target Name="PatchOpenApiJson" DependsOnTargets="ConvertYamlToJson" Condition="'$(RunCodegen)' == 'true'" Inputs="$(OpenApiSpecJson);$(OpenApiPatchScript)" Outputs="$(PatchedStampFile)">
+    <Message Importance="high" Text="Patching OpenAPI spec (incremental)..." />
     <Copy SourceFiles="$(OpenApiSpecJson)" DestinationFiles="$(OpenApiSpecJson).bak" SkipUnchangedFiles="true" />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <WriteLinesToFile File="$(PatchedStampFile)" Lines="Patched: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
   </Target>
 
   <!-- Generate C# SDK only when needed -->
-  <Target Name="GenerateOpenApiClient"
-          DependsOnTargets="CheckEnvironment;EnsureNodeModules;PatchOpenApiJson"
-          Inputs="$(OpenApiSpecJson)"
-          Outputs="$(StampFile)">
+  <Target Name="GenerateOpenApiClient" Condition="'$(RunCodegen)' == 'true'" DependsOnTargets="CheckEnvironment;EnsureNodeModules;PatchOpenApiJson" Inputs="$(PatchedStampFile);openapi-generator-config.json;.openapi-generator-ignore;package-lock.json" Outputs="$(StampFile)" BeforeTargets="CoreCompile">
     <Message Importance="high" Text="Generating C# client from OpenAPI spec (incremental)..." />
     <MakeDir Directories="$(GeneratedDir)" Condition="!Exists('$(GeneratedDir)')" />
-    <Exec Command="npx openapi-generator-cli generate ^
-            -i &quot;$(OpenApiSpecJson)&quot; ^
-            -o &quot;$(GeneratedDir)&quot; ^
-            --ignore-file-override &quot;.openapi-generator-ignore&quot; ^
-            -c &quot;openapi-generator-config.json&quot;"
-          WorkingDirectory="$(MSBuildThisFileDirectory)"
-          EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
+    <Exec Command="npx openapi-generator-cli generate ^&#xD;&#xA;            -i &quot;$(OpenApiSpecJson)&quot; ^&#xD;&#xA;            -o &quot;$(GeneratedDir)&quot; ^&#xD;&#xA;            --ignore-file-override &quot;.openapi-generator-ignore&quot; ^&#xD;&#xA;            -c &quot;openapi-generator-config.json&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
     <WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
-    <Touch Files="$(StampFile)" AlwaysCreate="false" />
   </Target>
-
-  <!-- Hook generation into Build, not Clean -->
-  <PropertyGroup>
-    <BuildDependsOn>
-      GenerateOpenApiClient;
-      $(BuildDependsOn)
-    </BuildDependsOn>
-  </PropertyGroup>
 
   <!-- Prevent default glob from picking these up on the next build too -->
   <ItemGroup>
@@ -122,9 +104,7 @@
   </ItemGroup>
 
   <!-- After generation, dynamically add the files to Compile before CoreCompile -->
-  <Target Name="IncludeGeneratedSources"
-          DependsOnTargets="GenerateOpenApiClient"
-          BeforeTargets="CoreCompile">
+  <Target Name="IncludeGeneratedSources" DependsOnTargets="GenerateOpenApiClient" Condition="'$(DesignTimeBuild)' != 'true'" BeforeTargets="CoreCompile">
     <ItemGroup>
       <Compile Include="$(GeneratedDir)\**\*.cs">
         <AutoGen>true</AutoGen>
@@ -138,5 +118,12 @@
     <RemoveDir Directories="$(GeneratedDir)" Condition="Exists('$(GeneratedDir)')" />
     <RemoveDir Directories="$(SchemaDir)" Condition="Exists('$(SchemaDir)')" />
   </Target>
+
+  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true' or '$(RunCodegen)' != 'true'">
+    <Compile Include="$(GeneratedDir)\**\*.cs">
+      <AutoGen>true</AutoGen>
+      <DesignTime>true</DesignTime>
+    </Compile>
+  </ItemGroup>
 
 </Project>
