@@ -26,7 +26,7 @@
   <!-- Generate the module by running Project 2 -->
   <Target Name="GenerateModule" DependsOnTargets="Build" Inputs="@(GeneratorInputs)" Outputs="$(PsModuleRoot)\.stamp">
     <!-- dotnet run will build CodeGen if needed and then run it -->
-    <Exec Command="dotnet run --project ..\CodeGen\CodeGen.csproj --configuration $(Configuration) -- --out &quot;$(PsModuleRoot)&quot;" />
+    <Exec Command="dotnet run --project ..\NetBoxPS.CodeGen\NetBoxPS.CodeGen.csproj --configuration $(Configuration) -- &quot;$(PsModuleRoot)&quot; &quot;..\NetBoxSdk\bin\$(Configuration)\net8.0\NetBoxSdk.dll&quot;" />
     <!-- Mark output for incremental builds -->
     <Touch Files="$(PsModuleRoot)\.stamp" AlwaysCreate="true" />
   </Target>
