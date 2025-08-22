@@ -11,14 +11,14 @@
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
 	</ItemGroup>
 
-
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<OpenApiPatchScript>$(MSBuildProjectDirectory)\PatchOpenApiSpec.ps1</OpenApiPatchScript>
 		<!-- URL to the latest spec -->
 		<OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
-		<OpenApiSpecYaml>openapi.yaml</OpenApiSpecYaml>
-		<OpenApiSpecJson>openapi.json</OpenApiSpecJson>
+		<SchemaDir>Schema</SchemaDir>
+		<OpenApiSpecYaml>$(SchemaDir)\openapi.yaml</OpenApiSpecYaml>
+		<OpenApiSpecJson>$(SchemaDir)\openapi.json</OpenApiSpecJson>
 		<GeneratedDir>Generated</GeneratedDir>
 		<StampFile>$(GeneratedDir)\.sdk.stamp</StampFile>
 		<PackageName>NetBoxSdk</PackageName>
@@ -53,11 +53,16 @@
 		<Exec Command="npm install" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
-	<!-- Fetch spec ONLY if missing or remote is newer than local file.
-       curl -z uses the local file's mtime for an If-Modified-Since request.
-       If the server supports Last-Modified, no download occurs when unchanged. -->
+	<!-- Ensure schema directory exists -->
+	<Target Name="EnsureSchemaDir"
+			BeforeTargets="FetchOpenApiSpec">
+		<MakeDir Directories="$(SchemaDir)" Condition="!Exists('$(SchemaDir)')" />
+	</Target>
+
+	<!-- Fetch spec ONLY if missing or remote is newer than local file. -->
 	<Target Name="FetchOpenApiSpec"
 			BeforeTargets="ConvertYamlToJson"
+			DependsOnTargets="EnsureSchemaDir"
 			Inputs="$(OpenApiSpecYaml)"
 			Outputs="$(OpenApiSpecYaml)">
 		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)" />
@@ -82,13 +87,8 @@
 		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
-	<!-- Generate C# SDK only when:
-         - stamp file is missing (first build or last run failed), OR
-         - the JSON spec changed (newer than stamp), OR
-         - Generated files are missing (stamp is our proxy).
-       Using a stamp file makes success explicit and keeps the target incremental. -->
+	<!-- Generate C# SDK only when needed -->
 	<Target Name="GenerateOpenApiClient"
-			BeforeTargets="BeforeBuild"
 			DependsOnTargets="CheckEnvironment;EnsureNodeModules;FetchOpenApiSpec;ConvertYamlToJson"
 			Inputs="$(OpenApiSpecJson)"
 			Outputs="$(StampFile)">
@@ -102,13 +102,38 @@
             WorkingDirectory="$(MSBuildProjectDirectory)" 
             EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
 		<WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
-		<!-- Set the stamp mtime to 'now' so future runs compare cleanly -->
 		<Touch Files="$(StampFile)" AlwaysCreate="false" />
+	</Target>
+
+  <!-- Hook generation into Build, not Clean -->
+  <PropertyGroup>
+    <BuildDependsOn>
+      GenerateOpenApiClient;
+      $(BuildDependsOn)
+    </BuildDependsOn>
+  </PropertyGroup>
+
+	<!-- Prevent default glob from picking these up on the next build too -->
+	<ItemGroup>
+		<Compile Remove="$(GeneratedDir)\**\*.cs" />
+	</ItemGroup>
+
+	<!-- After generation, dynamically add the files to Compile before CoreCompile -->
+	<Target Name="IncludeGeneratedSources"
+			BeforeTargets="CoreCompile"
+			DependsOnTargets="GenerateOpenApiClient">
+		<ItemGroup>
+			<Compile Include="$(GeneratedDir)\**\*.cs">
+				<AutoGen>true</AutoGen>
+				<DesignTime>false</DesignTime>
+			</Compile>
+		</ItemGroup>
 	</Target>
 
 	<!-- Cleaning also removes the stamp so next build will regenerate -->
 	<Target Name="CleanGenerated" AfterTargets="Clean">
 		<RemoveDir Directories="$(GeneratedDir)" />
+		<RemoveDir Directories="$(SchemaDir)" />
 	</Target>
 
 </Project>

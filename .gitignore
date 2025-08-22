@@ -135,3 +135,4 @@ _NCrunch*
 NetBoxSdk/node_modules
 NetBoxSdk/openapi.*
 NetBoxSdk/Generated
+NetBoxSdk/Schema
