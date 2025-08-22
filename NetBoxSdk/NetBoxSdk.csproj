@@ -1,109 +1,112 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
-		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
-		<PackageReference Include="Polly" Version="8.6.2" />
-		<PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
-		<PackageReference Include="System.Text.Json" Version="9.0.8" />
-		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
+    <PackageReference Include="Polly" Version="8.6.2" />
+    <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
+    <PackageReference Include="System.Text.Json" Version="9.0.8" />
+    <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+  </ItemGroup>
 
-	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
-		<OpenApiPatchScript>$(MSBuildProjectDirectory)\PatchOpenApiSpec.ps1</OpenApiPatchScript>
-		<!-- URL to the latest spec -->
-		<OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
-		<SchemaDir>Schema</SchemaDir>
-		<OpenApiSpecYaml>$(SchemaDir)\openapi.yaml</OpenApiSpecYaml>
-		<OpenApiSpecJson>$(SchemaDir)\openapi.json</OpenApiSpecJson>
-		<GeneratedDir>Generated</GeneratedDir>
-		<StampFile>$(GeneratedDir)\.sdk.stamp</StampFile>
-		<PackageName>NetBoxSdk</PackageName>
-		<JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
-	</PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <OpenApiPatchScript>$(MSBuildThisFileDirectory)PatchOpenApiSpec.ps1</OpenApiPatchScript>
+    <OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
+    <SchemaDir>Schema</SchemaDir>
+    <OpenApiSpecYaml>$(SchemaDir)\openapi.yaml</OpenApiSpecYaml>
+    <OpenApiSpecJson>$(SchemaDir)\openapi.json</OpenApiSpecJson>
+    <GeneratedDir>Generated</GeneratedDir>
+    <StampFile>$(GeneratedDir)\.sdk.stamp</StampFile>
+    <PackageName>NetBoxSdk</PackageName>
+    <JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
+  </PropertyGroup>
 
-	<!-- Preflight check for required tools -->
-	<Target Name="CheckEnvironment" BeforeTargets="GenerateOpenApiClient">
-		<Exec Command="curl --version" ContinueOnError="true">
-			<Output TaskParameter="ExitCode" PropertyName="CurlExitCode" />
-		</Exec>
-		<Exec Command="npm --version" ContinueOnError="true">
-			<Output TaskParameter="ExitCode" PropertyName="NpmExitCode" />
-		</Exec>
-		<Exec Command="npx --version" ContinueOnError="true">
-			<Output TaskParameter="ExitCode" PropertyName="NpxExitCode" />
-		</Exec>
-		<Exec Command="java --version" ContinueOnError="true">
-			<Output TaskParameter="ExitCode" PropertyName="JavaExitCode" />
-		</Exec>
-		<Error Condition="$(CurlExitCode) != 0" Text="Missing dependency: curl is required to fetch the OpenAPI spec." />
-		<Error Condition="$(NpmExitCode) != 0" Text="Missing dependency: npm is required to install OpenAPI Generator." />
-		<Error Condition="$(NpxExitCode) != 0" Text="Missing dependency: npx is required to run OpenAPI Generator." />
-		<Error Condition="$(JavaExitCode) != 0" Text="Missing dependency: java is required to run OpenAPI Generator." />
-	</Target>
+  <!-- Preflight check for required tools -->
+  <Target Name="CheckEnvironment"
+          DependsOnTargets=""
+          Inputs=""
+          Outputs="">
+    <Exec Command="curl --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="CurlExitCode" />
+    </Exec>
+    <Exec Command="npm --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="NpmExitCode" />
+    </Exec>
+    <Exec Command="npx --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="NpxExitCode" />
+    </Exec>
+    <Exec Command="java --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="JavaExitCode" />
+    </Exec>
+    <Error Condition="$(CurlExitCode) != 0" Text="Missing dependency: curl is required to fetch the OpenAPI spec." />
+    <Error Condition="$(NpmExitCode) != 0" Text="Missing dependency: npm is required to install OpenAPI Generator." />
+    <Error Condition="$(NpxExitCode) != 0" Text="Missing dependency: npx is required to run OpenAPI Generator." />
+    <Error Condition="$(JavaExitCode) != 0" Text="Missing dependency: java is required to run OpenAPI Generator." />
+  </Target>
 
-	<!-- Only install node modules if missing -->
-	<Target Name="EnsureNodeModules"
-			BeforeTargets="GenerateOpenApiClient"
-			Condition="!Exists('$(MSBuildProjectDirectory)\node_modules')">
-		<Message Importance="high" Text="node_modules not found — running npm install..." />
-		<Exec Command="npm install" WorkingDirectory="$(MSBuildProjectDirectory)" />
-	</Target>
+  <!-- Only install node modules if missing -->
+  <Target Name="EnsureNodeModules"
+          DependsOnTargets=""
+          Condition="!Exists('$(MSBuildThisFileDirectory)node_modules')">
+    <Message Importance="high" Text="node_modules not found — running npm install..." />
+    <Exec Command="npm install" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
 
-	<!-- Ensure schema directory exists -->
-	<Target Name="EnsureSchemaDir"
-			BeforeTargets="FetchOpenApiSpec">
-		<MakeDir Directories="$(SchemaDir)" Condition="!Exists('$(SchemaDir)')" />
-	</Target>
+  <!-- Ensure schema directory exists -->
+  <Target Name="EnsureSchemaDir"
+          DependsOnTargets="">
+    <MakeDir Directories="$(SchemaDir)" Condition="!Exists('$(SchemaDir)')" />
+  </Target>
 
-	<!-- Fetch spec ONLY if missing or remote is newer than local file. -->
-	<Target Name="FetchOpenApiSpec"
-			BeforeTargets="ConvertYamlToJson"
-			DependsOnTargets="EnsureSchemaDir"
-			Inputs="$(OpenApiSpecYaml)"
-			Outputs="$(OpenApiSpecYaml)">
-		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)" />
-		<Exec Command="curl -L -z &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
-		<!-- If the file did not exist, curl will download it and set mtime to now.
-         If unchanged, curl will leave the file as-is (mtime unchanged). -->
-	</Target>
+  <!-- Fetch spec ONLY if missing or remote is newer than local file. -->
+  <Target Name="FetchOpenApiSpec"
+          DependsOnTargets="EnsureSchemaDir"
+          Inputs="$(OpenApiSpecYaml)"
+          Outputs="$(OpenApiSpecYaml)">
+    <Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)" />
+    <Exec Command="curl -L -z &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
 
-	<!-- Convert YAML → JSON only when YAML is newer (or JSON missing) -->
-	<Target Name="ConvertYamlToJson"
-			BeforeTargets="GenerateOpenApiClient"
-			Inputs="$(OpenApiSpecYaml)"
-			Outputs="$(OpenApiSpecJson)">
-		<Message Importance="high" Text="Converting YAML to JSON (incremental)..." />
-		<Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json"
-			  WorkingDirectory="$(MSBuildProjectDirectory)" />
-	</Target>
+  <!-- Convert YAML → JSON only when YAML is newer (or JSON missing) -->
+  <Target Name="ConvertYamlToJson"
+          DependsOnTargets="FetchOpenApiSpec"
+          Inputs="$(OpenApiSpecYaml)"
+          Outputs="$(OpenApiSpecJson)">
+    <Message Importance="high" Text="Converting YAML to JSON (incremental)..." />
+    <Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json"
+          WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
 
-	<Target Name="PatchOpenApiJson" AfterTargets="ConvertYamlToJson" BeforeTargets="GenerateOpenApiClient">
-		<Message Importance="high" Text="Patching OpenAPI spec (fix enum names and strip null)..." />
-		<Copy SourceFiles="$(OpenApiSpecJson)" DestinationFiles="$(OpenApiSpecJson).bak" SkipUnchangedFiles="true" />
-		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
-	</Target>
+  <!-- Patch OpenAPI JSON after conversion -->
+  <Target Name="PatchOpenApiJson"
+          DependsOnTargets="ConvertYamlToJson"
+          Inputs="$(OpenApiSpecJson)"
+          Outputs="$(OpenApiSpecJson)">
+    <Message Importance="high" Text="Patching OpenAPI spec (fix enum names and strip null)..." />
+    <Copy SourceFiles="$(OpenApiSpecJson)" DestinationFiles="$(OpenApiSpecJson).bak" SkipUnchangedFiles="true" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
 
-	<!-- Generate C# SDK only when needed -->
-	<Target Name="GenerateOpenApiClient"
-			DependsOnTargets="CheckEnvironment;EnsureNodeModules;FetchOpenApiSpec;ConvertYamlToJson"
-			Inputs="$(OpenApiSpecJson)"
-			Outputs="$(StampFile)">
-		<Message Importance="high" Text="Generating C# client from OpenAPI spec (incremental)..." />
-		<MakeDir Directories="$(GeneratedDir)" Condition="!Exists('$(GeneratedDir)')" />
-        <Exec Command="npx openapi-generator-cli generate ^
+  <!-- Generate C# SDK only when needed -->
+  <Target Name="GenerateOpenApiClient"
+          DependsOnTargets="CheckEnvironment;EnsureNodeModules;PatchOpenApiJson"
+          Inputs="$(OpenApiSpecJson)"
+          Outputs="$(StampFile)">
+    <Message Importance="high" Text="Generating C# client from OpenAPI spec (incremental)..." />
+    <MakeDir Directories="$(GeneratedDir)" Condition="!Exists('$(GeneratedDir)')" />
+    <Exec Command="npx openapi-generator-cli generate ^
             -i &quot;$(OpenApiSpecJson)&quot; ^
             -o &quot;$(GeneratedDir)&quot; ^
             --ignore-file-override &quot;.openapi-generator-ignore&quot; ^
-            -c &quot;openapi-generator-config.json&quot;" 
-            WorkingDirectory="$(MSBuildProjectDirectory)" 
-            EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
-		<WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
-		<Touch Files="$(StampFile)" AlwaysCreate="false" />
-	</Target>
+            -c &quot;openapi-generator-config.json&quot;"
+          WorkingDirectory="$(MSBuildThisFileDirectory)"
+          EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
+    <WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
+    <Touch Files="$(StampFile)" AlwaysCreate="false" />
+  </Target>
 
   <!-- Hook generation into Build, not Clean -->
   <PropertyGroup>
@@ -113,27 +116,27 @@
     </BuildDependsOn>
   </PropertyGroup>
 
-	<!-- Prevent default glob from picking these up on the next build too -->
-	<ItemGroup>
-		<Compile Remove="$(GeneratedDir)\**\*.cs" />
-	</ItemGroup>
+  <!-- Prevent default glob from picking these up on the next build too -->
+  <ItemGroup>
+    <Compile Remove="$(GeneratedDir)\**\*.cs" />
+  </ItemGroup>
 
-	<!-- After generation, dynamically add the files to Compile before CoreCompile -->
-	<Target Name="IncludeGeneratedSources"
-			BeforeTargets="CoreCompile"
-			DependsOnTargets="GenerateOpenApiClient">
-		<ItemGroup>
-			<Compile Include="$(GeneratedDir)\**\*.cs">
-				<AutoGen>true</AutoGen>
-				<DesignTime>false</DesignTime>
-			</Compile>
-		</ItemGroup>
-	</Target>
+  <!-- After generation, dynamically add the files to Compile before CoreCompile -->
+  <Target Name="IncludeGeneratedSources"
+          DependsOnTargets="GenerateOpenApiClient"
+          BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <Compile Include="$(GeneratedDir)\**\*.cs">
+        <AutoGen>true</AutoGen>
+        <DesignTime>false</DesignTime>
+      </Compile>
+    </ItemGroup>
+  </Target>
 
-	<!-- Cleaning also removes the stamp so next build will regenerate -->
-	<Target Name="CleanGenerated" AfterTargets="Clean">
-		<RemoveDir Directories="$(GeneratedDir)" />
-		<RemoveDir Directories="$(SchemaDir)" />
-	</Target>
+  <!-- Cleaning also removes the stamp so next build will regenerate -->
+  <Target Name="CleanGenerated" AfterTargets="Clean">
+    <RemoveDir Directories="$(GeneratedDir)" Condition="Exists('$(GeneratedDir)')" />
+    <RemoveDir Directories="$(SchemaDir)" Condition="Exists('$(SchemaDir)')" />
+  </Target>
 
 </Project>
