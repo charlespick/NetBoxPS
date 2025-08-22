@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Management.Automation.Language;
+using System.Management.Automation;
 
 namespace NetBoxPS.CodeGen
 {
@@ -9,7 +11,6 @@ namespace NetBoxPS.CodeGen
     {
         public static int Main(string[] args)
         {
-            // Load the assembly from the file path provided in args[1]
             var sdkAssembly = Assembly.LoadFrom(args[1]);
             var endpoints = GetEndpoints(sdkAssembly);
 
@@ -23,7 +24,6 @@ namespace NetBoxPS.CodeGen
 
                 var paramGroups = GetParameterGroups(ep.Parameters);
 
-                // Identify all nested custom types for constructor generation
                 var nestedObjects = paramGroups
                     .Where(pg => pg.IsComplex)
                     .Select(pg => pg.Type)
@@ -33,66 +33,85 @@ namespace NetBoxPS.CodeGen
                 foreach (var nested in nestedObjects)
                 {
                     var nestedNoun = SelectPowerShellNoun(nested);
-                    var ctorAst = BuildConstructorAst(nestedNoun, nested);
+                    var ctorAst = GenerateConstructorFunctionAst(nestedNoun, nested);
                     constructorAsts.Add(ctorAst);
                 }
 
-                // Pass paramGroups to FunctionDefinitionAst for scaffolding
-                var funcAst = new FunctionDefinitionAst(verb, noun, paramGroups, nestedObjects, ep);
+                var funcAst = GenerateSdkWrapperFunctionAst(verb, noun, paramGroups, ep);
                 functionAsts.Add(funcAst);
             }
 
-            // Write all ASTs to output (pseudo-code, implement as needed)
             foreach (var ast in constructorAsts.Concat(functionAsts))
             {
-                ast.ToFile(args[0]);
+                // Write the generated PowerShell AST to file as script text
+                System.IO.File.AppendAllText(args[0], ast.Extent.Text + "\n\n");
             }
 
             Console.WriteLine("PowerShell function generation complete!");
             return 0;
         }
 
-        // Reflect over the SDK assembly to find all API endpoints
         public static IEnumerable<ApiEndpoint> GetEndpoints(Assembly sdkAssembly)
         {
-            // TODO: Implement actual reflection logic
-            throw new NotImplementedException();
+            var endpoints = new List<ApiEndpoint>();
+            var verbs = new[] { "Get", "Create", "Delete", "Update" };
+
+            foreach (var type in sdkAssembly.GetExportedTypes())
+            {
+                if (!type.IsClass || type.IsAbstract)
+                    continue;
+
+                foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                {
+                    if (!verbs.Any(v => method.Name.StartsWith(v, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    if (method.IsSpecialName)
+                        continue;
+
+                    endpoints.Add(new ApiEndpoint
+                    {
+                        MethodName = method.Name,
+                        ObjectType = method.ReturnType,
+                        Parameters = method.GetParameters()
+                    });
+                }
+            }
+
+            return endpoints;
         }
 
-        // Analyze method name to choose the correct PowerShell verb
         public static string SelectPowerShellVerb(string methodName)
         {
-            // Example logic, expand as needed
-            if (methodName.StartsWith("Get", StringComparison.OrdinalIgnoreCase)) return "Get";
-            if (methodName.StartsWith("Create", StringComparison.OrdinalIgnoreCase)) return "New";
-            if (methodName.StartsWith("Delete", StringComparison.OrdinalIgnoreCase)) return "Remove";
-            if (methodName.StartsWith("Update", StringComparison.OrdinalIgnoreCase)) return "Set";
-            return "Invoke";
+            if (methodName.StartsWith("Get", StringComparison.OrdinalIgnoreCase))
+                return VerbsCommon.Get;
+            if (methodName.StartsWith("Create", StringComparison.OrdinalIgnoreCase))
+                return VerbsCommon.New;
+            if (methodName.StartsWith("Delete", StringComparison.OrdinalIgnoreCase))
+                return VerbsCommon.Remove;
+            if (methodName.StartsWith("Update", StringComparison.OrdinalIgnoreCase))
+                return VerbsCommon.Set;
+            throw new ArgumentException($"Unknown method verb for method name: {methodName}", nameof(methodName));
         }
 
-        // Convert object type to PowerShell-friendly singular PascalCase noun
         public static string SelectPowerShellNoun(Type objectType)
         {
-            // Example: strip plural, convert to PascalCase
             var name = objectType.Name;
             if (name.EndsWith("s")) name = name.Substring(0, name.Length - 1);
             return char.ToUpper(name[0]) + name.Substring(1);
         }
 
-        // Flatten parameters if a first-level object is present
         public static IEnumerable<ParameterInfo> FlattenParameters(IEnumerable<ParameterInfo> parameters)
         {
             var paramList = parameters.ToList();
             if (paramList.Count == 1 && IsComplexType(paramList[0].ParameterType))
             {
-                // Flatten properties of the object
                 return paramList[0].ParameterType.GetProperties()
                     .Select(p => new DummyParameterInfo(p));
             }
             return paramList;
         }
 
-        // Identify nested objects for constructor generation
         public static IEnumerable<Type> GetNestedObjects(IEnumerable<ParameterInfo> parameters)
         {
             var nested = new List<Type>();
@@ -110,20 +129,138 @@ namespace NetBoxPS.CodeGen
             return nested.Distinct();
         }
 
-        // Build constructor AST for nested objects
-        public static FunctionDefinitionAst BuildConstructorAst(string noun, Type objectType)
+        // Generates a PowerShell AST for a constructor function for a custom object type
+        public static FunctionDefinitionAst GenerateConstructorFunctionAst(string noun, Type objectType)
         {
-            // TODO: Use PowerShell AST to build the constructor function
-            throw new NotImplementedException();
+            var functionName = $"New-{noun}";
+            var parameters = objectType.GetProperties()
+                .Select(p => new ParameterAst(
+                    extent: null,
+                    new VariableExpressionAst(null, p.Name, false),
+                    null,
+                    null,
+                    new List<AttributeAst>()
+                )).ToList();
+
+            var paramBlock = new ParamBlockAst(null, parameters, null);
+
+            // The body just creates a new object and sets properties from parameters
+            var hashtableEntries = objectType.GetProperties().Select(p =>
+                new ExpressionAstPair(
+                    new StringConstantExpressionAst(null, p.Name, StringConstantType.DoubleQuoted),
+                    new VariableExpressionAst(null, p.Name, false)
+                )
+            ).ToList();
+
+            var scriptBlock = new ScriptBlockAst(
+                null,
+                paramBlock,
+                new StatementBlockAst(
+                    null,
+                    new[]
+                    {
+                        new PipelineAst(
+                            null,
+                            new CommandAst[]
+                            {
+                                new CommandAst(
+                                    null,
+                                    new List<CommandElementAst>
+                                    {
+                                        new StringConstantExpressionAst(null, "[PSCustomObject]", StringConstantType.DoubleQuoted),
+                                        new CommandParameterAst(null, "Property", new HashtableAst(
+                                            null,
+                                            hashtableEntries
+                                        ), null)
+                                    },
+                                    TokenKind.Function,
+                                    null
+                                )
+                            }
+                        )
+                    },
+                    null
+                ),
+                false,
+                false
+            );
+
+            return new FunctionDefinitionAst(
+                null,
+                functionName,
+                false,
+                paramBlock,
+                scriptBlock
+            );
         }
 
-        // Helper: determine if a type is a complex object (not primitive or string)
+        // Generates a PowerShell AST for an SDK wrapper function
+        public static FunctionDefinitionAst GenerateSdkWrapperFunctionAst(
+            string verb,
+            string noun,
+            IEnumerable<ParameterGroup> parameterGroups,
+            ApiEndpoint endpoint)
+        {
+            var functionName = $"{verb}-{noun}";
+            var parameters = parameterGroups.Select(pg =>
+                new ParameterAst(
+                    extent: null,
+                    new VariableExpressionAst(null, pg.Name, false),
+                    null,
+                    null,
+                    new List<AttributeAst>()
+                )).ToList();
+
+            var paramBlock = new ParamBlockAst(null, parameters, null);
+
+            var commandElements = new List<CommandElementAst>
+            {
+                new StringConstantExpressionAst(null, $"$sdk.{endpoint.MethodName}", StringConstantType.DoubleQuoted)
+            };
+            commandElements.AddRange(parameterGroups.Select(pg =>
+                new CommandParameterAst(null, pg.Name, new VariableExpressionAst(null, pg.Name, false), null)
+            ));
+
+            var scriptBlock = new ScriptBlockAst(
+                null,
+                paramBlock,
+                new StatementBlockAst(
+                    null,
+                    new[]
+                    {
+                        new PipelineAst(
+                            null,
+                            new CommandAst[]
+                            {
+                                new CommandAst(
+                                    null,
+                                    commandElements,
+                                    TokenKind.Function,
+                                    null
+                                )
+                            }
+                        )
+                    },
+                    null
+                ),
+                false,
+                false
+            );
+
+            return new FunctionDefinitionAst(
+                null,
+                functionName,
+                false,
+                paramBlock,
+                scriptBlock
+            );
+        }
+
         public static bool IsComplexType(Type type)
         {
             return !(type.IsPrimitive || type == typeof(string) || type.IsEnum);
         }
 
-        // Dummy ParameterInfo for flattened properties (since PropertyInfo != ParameterInfo)
         public class DummyParameterInfo : ParameterInfo
         {
             public DummyParameterInfo(PropertyInfo prop)
@@ -133,7 +270,6 @@ namespace NetBoxPS.CodeGen
             }
         }
 
-        // Represents a parameter group for a top-level parameter (primitive or custom type)
         public class ParameterGroup
         {
             public string Name { get; }
@@ -150,119 +286,28 @@ namespace NetBoxPS.CodeGen
             }
         }
 
-        // Returns a list of parameter groups for the endpoint
         public static IEnumerable<ParameterGroup> GetParameterGroups(IEnumerable<ParameterInfo> parameters)
         {
             foreach (var param in parameters)
             {
                 if (IsComplexType(param.ParameterType))
                 {
-                    // Group for custom type: expose its properties
                     var props = param.ParameterType.GetProperties()
                         .Select(p => new DummyParameterInfo(p));
                     yield return new ParameterGroup(param.Name, param.ParameterType, true, props);
                 }
                 else
                 {
-                    // Group for primitive type: expose directly
                     yield return new ParameterGroup(param.Name, param.ParameterType, false);
                 }
             }
         }
 
-        // Example endpoint descriptor
         public class ApiEndpoint
         {
             public string MethodName { get; set; }
             public Type ObjectType { get; set; }
             public IEnumerable<ParameterInfo> Parameters { get; set; }
-        }
-
-        // Placeholder for PowerShell AST function definition
-        public class FunctionDefinitionAst
-        {
-            public string Verb { get; }
-            public string Noun { get; }
-            public IEnumerable<ParameterGroup> ParameterGroups { get; }
-            public IEnumerable<Type> NestedObjects { get; }
-            public ApiEndpoint Endpoint { get; }
-
-            public FunctionDefinitionAst(
-                string verb,
-                string noun,
-                IEnumerable<ParameterGroup> parameterGroups,
-                IEnumerable<Type> nestedObjects,
-                ApiEndpoint endpoint)
-            {
-                Verb = verb;
-                Noun = noun;
-                ParameterGroups = parameterGroups;
-                NestedObjects = nestedObjects;
-                Endpoint = endpoint;
-            }
-
-            // Assemble the PowerShell function as a string
-            private string AssemblePowerShellFunction()
-            {
-                var functionName = $"{Verb}-{Noun}";
-                var paramLines = new List<string>();
-                var objectAssemblyLines = new List<string>();
-                var callParams = new List<string>();
-
-                foreach (var group in ParameterGroups)
-                {
-                    if (group.IsComplex)
-                    {
-                        // Add parameters for each property of the complex type
-                        foreach (var prop in group.Properties)
-                        {
-                            paramLines.Add($"    [Parameter()]${group.Name}_{prop.Name}");
-                        }
-                        // Assemble the custom object from its properties
-                        objectAssemblyLines.Add($"    ${group.Name} = [PSCustomObject]@{{");
-                        foreach (var prop in group.Properties)
-                        {
-                            objectAssemblyLines.Add($"        {prop.Name} = ${group.Name}_{prop.Name}");
-                        }
-                        objectAssemblyLines.Add("    }");
-                        callParams.Add($"${group.Name}");
-                    }
-                    else
-                    {
-                        // Add primitive parameter
-                        paramLines.Add($"    [Parameter()]${group.Name}");
-                        callParams.Add($"${group.Name}");
-                    }
-                }
-
-                // Example: Call the SDK endpoint (pseudo-code, adjust as needed)
-                var sdkCall = $"    # Call SDK: $result = [SDK]::{Endpoint.MethodName}({string.Join(", ", callParams)})";
-
-                // Assemble the function
-                var lines = new List<string>
-                {
-                    $"function {functionName} {{",
-                    "    param(",
-                    string.Join(",\n", paramLines),
-                    "    )",
-                    ""
-                };
-                lines.AddRange(objectAssemblyLines);
-                lines.Add(sdkCall);
-                lines.Add("    return $result");
-                lines.Add("}");
-
-                return string.Join("\n", lines);
-            }
-
-            // Serialize AST to PowerShell code and write to outputPath
-            public void ToFile(string outputPath)
-            {
-                var psCode = AssemblePowerShellFunction();
-                System.IO.File.AppendAllText(outputPath, psCode + "\n\n");
-            }
-
-            // Add methods as needed for scaffolding
         }
     }
 }
