@@ -1,6 +1,7 @@
 {
   "generatorName": "csharp",
-
+  "modelNameSuffix": "Dto",
+  "nameMappings": { "IPAddress": "NbIPAddress" },
   "additionalProperties": {
     "targetFramework": "netstandard2.0",
     "packageName": "NetBoxSdk",

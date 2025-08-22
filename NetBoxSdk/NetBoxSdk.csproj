@@ -1,6 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
+		<PackageReference Include="Polly" Version="8.6.2" />
+		<PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
 		<PackageReference Include="System.Text.Json" Version="9.0.8" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
 	</ItemGroup>
@@ -8,6 +14,7 @@
 
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
+		<OpenApiPatchScript>$(MSBuildProjectDirectory)\PatchOpenApiSpec.ps1</OpenApiPatchScript>
 		<!-- URL to the latest spec -->
 		<OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
 		<OpenApiSpecYaml>openapi.yaml</OpenApiSpecYaml>
@@ -29,9 +36,6 @@
 		<Exec Command="npx --version" ContinueOnError="true">
 			<Output TaskParameter="ExitCode" PropertyName="NpxExitCode" />
 		</Exec>
-		<Exec Command="npx jq --version" ContinueOnError="true">
-		  <Output TaskParameter="ExitCode" PropertyName="JqExitCode" />
-		</Exec>
 		<Exec Command="java --version" ContinueOnError="true">
 			<Output TaskParameter="ExitCode" PropertyName="JavaExitCode" />
 		</Exec>
@@ -39,7 +43,6 @@
 		<Error Condition="$(NpmExitCode) != 0" Text="Missing dependency: npm is required to install OpenAPI Generator." />
 		<Error Condition="$(NpxExitCode) != 0" Text="Missing dependency: npx is required to run OpenAPI Generator." />
 		<Error Condition="$(JavaExitCode) != 0" Text="Missing dependency: java is required to run OpenAPI Generator." />
-		<Error Condition="$(JqExitCode) != 0" Text="Missing dependency: jq is required to patch the OpenAPI spec." />
 	</Target>
 
 	<!-- Only install node modules if missing -->
@@ -57,9 +60,8 @@
 			BeforeTargets="ConvertYamlToJson"
 			Inputs="$(OpenApiSpecYaml)"
 			Outputs="$(OpenApiSpecYaml)">
-		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)"/>
-		<Exec Command="curl -L -z &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;"
-			  WorkingDirectory="$(MSBuildProjectDirectory)"/>
+		<Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (conditional)" />
+		<Exec Command="curl -L -z &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
 		<!-- If the file did not exist, curl will download it and set mtime to now.
          If unchanged, curl will leave the file as-is (mtime unchanged). -->
 	</Target>
@@ -74,22 +76,12 @@
 			  WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
-	<Target Name="PatchOpenApiJson"
-          AfterTargets="ConvertYamlToJson"
-          BeforeTargets="GenerateOpenApiClient">
-    <Message Importance="high" Text="Patching OpenAPI spec (fix enum names and strip null)..." />
-    <Exec
-		  Command="jq &quot;
-			(.components.schemas.DataSource.properties.type.properties.label) |=
-			  ( . + { \&quot;x-enum-varnames\&quot;: [ \&quot;None\&quot;, \&quot;Local\&quot;, \&quot;Git\&quot;, \&quot;AmazonS3\&quot; ] } )
-			|
-			(.components.schemas.DataSource.properties.type.properties.value.enum) |=
-			  ( map(select(. != null)) )
-		  &quot; &quot;$(OpenApiSpecJson)&quot; &gt; &quot;$(OpenApiSpecJson).tmp&quot; &amp;&amp; move /Y &quot;$(OpenApiSpecJson).tmp&quot; &quot;$(OpenApiSpecJson)&quot;"
-		  WorkingDirectory="$(MSBuildProjectDirectory)" />
-    </Target>
+	<Target Name="PatchOpenApiJson" AfterTargets="ConvertYamlToJson" BeforeTargets="GenerateOpenApiClient">
+		<Message Importance="high" Text="Patching OpenAPI spec (fix enum names and strip null)..." />
+		<Copy SourceFiles="$(OpenApiSpecJson)" DestinationFiles="$(OpenApiSpecJson).bak" SkipUnchangedFiles="true" />
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+	</Target>
 
-	
 	<!-- Generate C# SDK only when:
          - stamp file is missing (first build or last run failed), OR
          - the JSON spec changed (newer than stamp), OR
@@ -102,17 +94,14 @@
 			Outputs="$(StampFile)">
 		<Message Importance="high" Text="Generating C# client from OpenAPI spec (incremental)..." />
 		<MakeDir Directories="$(GeneratedDir)" Condition="!Exists('$(GeneratedDir)')" />
-		<Exec Command="npx openapi-generator-cli generate ^
-		  -i &quot;$(OpenApiSpecJson)&quot; ^
-		  -o &quot;$(GeneratedDir)&quot; ^
-		  --ignore-file-override &quot;.openapi-generator-ignore&quot; ^
-		  -c &quot;openapi-generator-config.json&quot;"
-		  WorkingDirectory="$(MSBuildProjectDirectory)"
-		  EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
-		<!-- Only mark success by writing the stamp if the generator command succeeded -->
-		<WriteLinesToFile File="$(StampFile)"
-						  Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)"
-						  Overwrite="true" />
+        <Exec Command="npx openapi-generator-cli generate ^
+            -i &quot;$(OpenApiSpecJson)&quot; ^
+            -o &quot;$(GeneratedDir)&quot; ^
+            --ignore-file-override &quot;.openapi-generator-ignore&quot; ^
+            -c &quot;openapi-generator-config.json&quot;" 
+            WorkingDirectory="$(MSBuildProjectDirectory)" 
+            EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
+		<WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
 		<!-- Set the stamp mtime to 'now' so future runs compare cleanly -->
 		<Touch Files="$(StampFile)" AlwaysCreate="false" />
 	</Target>
