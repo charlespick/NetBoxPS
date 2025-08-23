@@ -1,4 +1,13 @@
-﻿using System;
+﻿
+// TODO: Using attribute-name contains “Required/Mandatory” may not match how the generator marks required fields. This can mis-mark parameters as Mandatory.
+// TODO: Delete/void endpoints produce *-Void wrappers. Derive noun from the primary resource (parameter or declaring API class) when return type is void/non-informative.
+// TODO: Refine handling of SDK names, actions, and such to ensure full coverage
+// TODO: Properties with the same name across multiple complex inputs collide at the wrapper level. You have SourceGroup, but you don’t incorporate it into the parameter name.
+// TODO: You don’t filter CanWrite when flattening group properties, so wrapper reconstruction can attempt $obj.Prop = $Prop on non-writable members.
+// TODO: Uses New-Object unconditionally. If the model lacks a default ctor, wrapper will fail. Mirror your constructor logic (fallback to [Type]::new()).
+
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -267,41 +276,44 @@ namespace NetBoxPS.CodeGen
                 .Where(p => p.CanWrite)
                 .ToList();
 
-            // ---- Parameters: typed + [Parameter()] + Mandatory when required ----
+            // ---- Parameters: typed + [Parameter()] + Mandatory where required ----
             var parameters = new List<ParameterAst>();
-            foreach (var p in settableProperties)
+            for (int i = 0; i < settableProperties.Count; i++)
             {
-                var attrs = new List<AttributeAst>();
+                var p = settableProperties[i];
+                var attrs = new List<AttributeBaseAst>();
 
-                // [Parameter(Mandatory=$true)] for required properties
+                // [Parameter(Mandatory=$true, Position=<i>)] for required properties
+                var namedArgs = new List<NamedAttributeArgumentAst>();
+                
                 if ((p.PropertyType.IsValueType && Nullable.GetUnderlyingType(p.PropertyType) == null) || IsRequiredProperty(p))
                 {
-                    attrs.Add(new AttributeAst(
+                    namedArgs.Add(new NamedAttributeArgumentAst(
                         extent: null,
-                        typeName: new TypeName(null, "Parameter"),
-                        positionalArguments: new List<ExpressionAst>
-                        {
-                            new ConstantExpressionAst(null, true)
-                        },
-                        namedArguments: null
-                    ));
-                }
-                else
-                {
-                    attrs.Add(new AttributeAst(
-                        extent: null,
-                        typeName: new TypeName(null, "Parameter"),
-                        positionalArguments: new List<ExpressionAst>(),
-                        namedArguments: null
+                        argumentName: "Mandatory",
+                        argument: new VariableExpressionAst(null, "true", false),
+                        expressionOmitted: false
                     ));
                 }
 
-                // Add a type constraint: [<FullName>]
+                namedArgs.Add(new NamedAttributeArgumentAst(
+                    extent: null,
+                    argumentName: "Position",
+                    argument: new ConstantExpressionAst(null, i),
+                    expressionOmitted: false
+                ));
+
                 attrs.Add(new AttributeAst(
                     extent: null,
-                    typeName: new TypeName(null, p.PropertyType.FullName),
+                    typeName: new TypeName(null, "Parameter"),
                     positionalArguments: new List<ExpressionAst>(),
-                    namedArguments: null
+                    namedArguments: namedArgs
+                ));
+
+                // Add a type constraint using TypeConstraintAst instead of AttributeAst
+                attrs.Add(new TypeConstraintAst(
+                    extent: null,
+                    typeName: new TypeName(null, p.PropertyType.FullName)
                 ));
 
                 parameters.Add(new ParameterAst(
@@ -403,13 +415,14 @@ namespace NetBoxPS.CodeGen
                 isConfiguration: false
             );
 
+            // FIX: Remove parameters from FunctionDefinitionAst constructor - use param block only
             return new FunctionDefinitionAst(
                 extent: null,
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
                 isDynamic: false,
-                parameters: new System.Collections.ObjectModel.ReadOnlyCollection<ParameterAst>(parameters),
+                parameters: null, // Changed: Remove duplicate parameters - use param block instead
                 body: scriptBlock,
                 functionOrFilterKeyword: null
             );
@@ -445,31 +458,76 @@ namespace NetBoxPS.CodeGen
             // ---- Parameters ----
             var parameters = new List<ParameterAst>();
 
-            // $Sdk first (left untyped here to avoid coupling; type if you have a known interface)
+            // $Sdk first with [Parameter(Mandatory=$true, Position=0)]
+            var sdkNamedArgs = new List<NamedAttributeArgumentAst>
+            {
+                new NamedAttributeArgumentAst(
+                    extent: null,
+                    argumentName: "Mandatory",
+                    argument: new VariableExpressionAst(null, "true", false),
+                    expressionOmitted: false
+                ),
+                new NamedAttributeArgumentAst(
+                    extent: null,
+                    argumentName: "Position",
+                    argument: new ConstantExpressionAst(null, 0),
+                    expressionOmitted: false
+                )
+            };
+
             parameters.Add(new ParameterAst(
                 extent: null,
                 name: new VariableExpressionAst(null, "Sdk", false),
-                attributes: new List<AttributeAst> {
-            new AttributeAst(null, new TypeName(null, "Parameter"), new List<ExpressionAst>(), null)
+                attributes: new List<AttributeBaseAst> {
+                    new AttributeAst(
+                        extent: null,
+                        typeName: new TypeName(null, "Parameter"),
+                        positionalArguments: new List<ExpressionAst>(),
+                        namedArguments: sdkNamedArgs
+                    )
                 },
                 defaultValue: null
             ));
 
             // Each flattened param gets a type constraint and [Parameter()]
-            foreach (var fp in flatParams)
+            for (int i = 0; i < flatParams.Count; i++)
             {
-                var attrs = new List<AttributeAst>
-        {
-            new AttributeAst(null, new TypeName(null, "Parameter"), new List<ExpressionAst>(), null),
-            // new TypeConstraintAst(null, new TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName)) // <-- REMOVE THIS LINE
-            // Instead, add a type constraint attribute:
-            new AttributeAst(
-                null,
-                new TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName),
-                new List<ExpressionAst>(),
-                null
-            )
-        };
+                var fp = flatParams[i];
+                var namedArgs = new List<NamedAttributeArgumentAst>
+                {
+                    new NamedAttributeArgumentAst(
+                        extent: null,
+                        argumentName: "Position",
+                        argument: new ConstantExpressionAst(null, i + 1), // +1 because Sdk is position 0
+                        expressionOmitted: false
+                    )
+                };
+
+                // Mark complex types as mandatory if they don't have nullable properties
+                if (fp.IsComplex || (fp.Type.IsValueType && Nullable.GetUnderlyingType(fp.Type) == null))
+                {
+                    namedArgs.Add(new NamedAttributeArgumentAst(
+                        extent: null,
+                        argumentName: "Mandatory",
+                        argument: new VariableExpressionAst(null, "true", false),
+                        expressionOmitted: false
+                    ));
+                }
+
+                var attrs = new List<AttributeBaseAst>
+                {
+                    new AttributeAst(
+                        extent: null,
+                        typeName: new TypeName(null, "Parameter"),
+                        positionalArguments: new List<ExpressionAst>(),
+                        namedArguments: namedArgs
+                    ),
+                    // Use TypeConstraintAst instead of AttributeAst for type constraints
+                    new TypeConstraintAst(
+                        null,
+                        new TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName)
+                    )
+                };
 
                 parameters.Add(new ParameterAst(
                     extent: null,
@@ -595,13 +653,14 @@ namespace NetBoxPS.CodeGen
                 isConfiguration: false
             );
 
+            // FIX: Remove parameters from FunctionDefinitionAst constructor - use param block only
             return new FunctionDefinitionAst(
                 extent: null,
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
                 isDynamic: false,
-                parameters: new System.Collections.ObjectModel.ReadOnlyCollection<ParameterAst>(parameters),
+                parameters: null, // Changed: Remove duplicate parameters - use param block instead
                 body: scriptBlock,
                 functionOrFilterKeyword: null
             );
