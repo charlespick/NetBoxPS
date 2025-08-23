@@ -316,26 +316,52 @@ namespace NetBoxPS.CodeGen
             var statements = new List<StatementAst>();
 
             var hasParameterlessCtor = objectType.GetConstructor(Type.EmptyTypes) != null;
-            ExpressionAst objectCreationExpression = hasParameterlessCtor
-                ? (ExpressionAst)new CommandExpressionAst(
-                    null,
-                    new CommandAst(null, new CommandElementAst[]
+            StatementAst objectCreationStatement;
+
+            if (hasParameterlessCtor)
+            {
+                // New-Object -TypeName "Full.Type.Name" as a pipeline (StatementAst)
+                objectCreationStatement = new PipelineAst(
+                    extent: null,
+                    pipelineElements: new CommandBaseAst[]
                     {
-                new StringConstantExpressionAst(null, "New-Object", StringConstantType.BareWord),
-                new CommandParameterAst(null, "TypeName",
-                    new StringConstantExpressionAst(null, objectType.FullName, StringConstantType.DoubleQuoted), null)
-                    }),
-                    null)
-                : new InvokeMemberExpressionAst(
-                    null,
-                    new TypeExpressionAst(null, new TypeName(null, objectType.FullName)),
-                    new StringConstantExpressionAst(null, "new", StringConstantType.BareWord),
-                    new List<ExpressionAst>(),
-                    @static: true
-                );
+            new CommandAst(
+    extent: null,
+    commandElements: new CommandElementAst[]
+    {
+        new StringConstantExpressionAst(null, "New-Object", StringConstantType.BareWord),
+        new CommandParameterAst(
+            extent: null,
+            parameterName: "TypeName",
+            argument: new StringConstantExpressionAst(null, objectType.FullName, StringConstantType.DoubleQuoted),
+            errorPosition: null)
+    },
+    invocationOperator: TokenKind.Unknown,
+    redirections: null)
+
+                    });
+            }
+            else
+            {
+                // [Full.Type.Name]::new() wrapped in a pipeline (StatementAst)
+                var invokeNewExpr = new InvokeMemberExpressionAst(
+                    extent: null,
+                    expression: new TypeExpressionAst(null, new TypeName(null, objectType.FullName)),
+                    member: new StringConstantExpressionAst(null, "new", StringConstantType.BareWord),
+                    arguments: new List<ExpressionAst>(),
+                    @static: true);
+
+                objectCreationStatement = new PipelineAst(
+                    extent: null,
+                    pipelineElements: new CommandBaseAst[]
+                    {
+            new CommandExpressionAst(null, invokeNewExpr, redirections: null)
+                    });
+            }
+
 
             var objVar = new VariableExpressionAst(null, "obj", false);
-            statements.Add(new AssignmentStatementAst(null, objVar, TokenKind.Equals, objectCreationExpression, null));
+            statements.Add(new AssignmentStatementAst(null, objVar, TokenKind.Equals, objectCreationStatement, null));
 
             foreach (var p in settableProperties)
             {
@@ -353,11 +379,19 @@ namespace NetBoxPS.CodeGen
                 });
 
                 var assignStmt = new AssignmentStatementAst(
-                    null,
-                    new MemberExpressionAst(null, objVar, new StringConstantExpressionAst(null, p.Name, StringConstantType.BareWord), @static: false),
-                    TokenKind.Equals,
-                    new VariableExpressionAst(null, p.Name, false),
-                    null
+                    extent: null,
+                    left: new MemberExpressionAst(null, objVar, new StringConstantExpressionAst(null, p.Name, StringConstantType.BareWord), @static: false),
+                    @operator: TokenKind.Equals,
+                    right: new PipelineAst(
+                        extent: null,
+                        pipelineElements: new CommandBaseAst[]
+                        {
+                            new CommandExpressionAst(
+                                extent: null,
+                                expression: new VariableExpressionAst(null, p.Name, splatted: false),
+                                redirections: null)
+                        }),
+                    errorPosition: null
                 );
 
                 statements.Add(new IfStatementAst(
@@ -560,11 +594,19 @@ namespace NetBoxPS.CodeGen
                     });
 
                     var assignStmt = new AssignmentStatementAst(
-                        null,
-                        new MemberExpressionAst(null, objVar, new StringConstantExpressionAst(null, fp.SourceProperty, StringConstantType.BareWord), @static: false),
-                        TokenKind.Equals,
-                        new VariableExpressionAst(null, fp.Name, false),
-                        null
+                        extent: null,
+                        left: new MemberExpressionAst(null, objVar, new StringConstantExpressionAst(null, fp.Name, StringConstantType.BareWord), @static: false),
+                        @operator: TokenKind.Equals,
+                        right: new PipelineAst(
+                            extent: null,
+                            pipelineElements: new CommandBaseAst[]
+                            {
+                                new CommandExpressionAst(
+                                    extent: null,
+                                    expression: new VariableExpressionAst(null, fp.Name, splatted: false),
+                                    redirections: null)
+                            }),
+                        errorPosition: null
                     );
 
                     statements.Add(new IfStatementAst(
