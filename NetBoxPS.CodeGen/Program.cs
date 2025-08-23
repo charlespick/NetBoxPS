@@ -347,8 +347,8 @@ namespace NetBoxPS.CodeGen
                 var invokeNewExpr = new InvokeMemberExpressionAst(
                     extent: null,
                     expression: new TypeExpressionAst(null, new TypeName(null, objectType.FullName)),
-                    member: new StringConstantExpressionAst(null, "new", StringConstantType.BareWord),
-                    arguments: new List<ExpressionAst>(),
+                    method: new StringConstantExpressionAst(null, "new", StringConstantType.BareWord),
+                    arguments: null,
                     @static: true);
 
                 objectCreationStatement = new PipelineAst(
@@ -407,19 +407,25 @@ namespace NetBoxPS.CodeGen
                 ));
             }
 
-            statements.Add(new PipelineAst(null, new CommandAst[]
-            {
-        new CommandAst(null, new CommandElementAst[]
-        {
-            new StringConstantExpressionAst(null, "Write-Output", StringConstantType.BareWord),
-            objVar
-        })
-            }));
+            statements.Add(
+                new PipelineAst(
+                    extent: null,
+                    pipelineElements: new CommandBaseAst[]
+                    {
+                        new CommandExpressionAst(
+                            extent: null,
+                            expression: objVar,
+                            redirections: null
+                        )
+                    }
+                )
+            );
+
 
             var scriptBlock = new ScriptBlockAst(
                 extent: null,
                 paramBlock: paramBlock,
-                body: new StatementBlockAst(null, statements.ToArray(), null),
+                statements: new StatementBlockAst(null, statements.ToArray(), null),
                 isFilter: false,
                 isConfiguration: false
             );
@@ -429,10 +435,8 @@ namespace NetBoxPS.CodeGen
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
-                isDynamic: false,
                 parameters: null,
-                body: scriptBlock,
-                functionOrFilterKeyword: null
+                body: scriptBlock
             );
         }
 
@@ -566,18 +570,31 @@ namespace NetBoxPS.CodeGen
                 var objVarName = $"obj{first.SourceGroupPosition}";
                 var objVar = new VariableExpressionAst(null, objVarName, false);
 
-                var newObjExpr = new CommandExpressionAst(
-                    null,
-                    new CommandAst(null, new CommandElementAst[]
+                var newObjPipeline = new PipelineAst(
+                    extent: null,
+                    pipelineElements: new CommandBaseAst[]
                     {
-                new StringConstantExpressionAst(null, "New-Object", StringConstantType.BareWord),
-                new CommandParameterAst(null, "TypeName",
-                    new StringConstantExpressionAst(null, modelType.FullName, StringConstantType.DoubleQuoted), null)
-                    }),
-                    null
-                );
-                statements.Add(new AssignmentStatementAst(null, objVar, TokenKind.Equals, newObjExpr, null));
+                        new CommandAst(
+                            extent: null,
+                            commandElements: new CommandElementAst[]
+                            {
+                                new StringConstantExpressionAst(null, "New-Object", StringConstantType.BareWord),
+                                new CommandParameterAst(
+                                    extent: null,
+                                    parameterName: "TypeName",
+                                    argument: new StringConstantExpressionAst(null, modelType.FullName, StringConstantType.DoubleQuoted),
+                                    errorPosition: null)
+                            },
+                            invocationOperator: TokenKind.Unknown,
+                            redirections: null)
+                    });
 
+                                statements.Add(new AssignmentStatementAst(
+                                    extent: null,
+                                    left: objVar,
+                                    @operator: TokenKind.Equals,
+                                    right: newObjPipeline,
+                                    errorPosition: null));
                 foreach (var fp in group)
                 {
                     var containsKeyCall = new InvokeMemberExpressionAst(
@@ -628,20 +645,17 @@ namespace NetBoxPS.CodeGen
             var invokeMember = new InvokeMemberExpressionAst(
                 extent: null,
                 expression: new VariableExpressionAst(null, "Sdk", false),
-                member: new StringConstantExpressionAst(null, endpoint.MethodName, StringConstantType.BareWord),
+                method: new StringConstantExpressionAst(null, endpoint.MethodName, StringConstantType.BareWord),
                 arguments: methodArguments,
                 @static: false
             );
 
-            statements.Add(new PipelineAst(null, new CommandAst[]
-            {
-        new CommandExpressionAst(null, invokeMember, null)
-            }));
+            statements.Add(new PipelineAst(null, new CommandExpressionAst(null, invokeMember, null)));
 
             var scriptBlock = new ScriptBlockAst(
                 extent: null,
                 paramBlock: paramBlock,
-                body: new StatementBlockAst(null, statements.ToArray(), null),
+                statements: new StatementBlockAst(null, statements.ToArray(), null),
                 isFilter: false,
                 isConfiguration: false
             );
@@ -651,10 +665,8 @@ namespace NetBoxPS.CodeGen
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
-                isDynamic: false,
                 parameters: null,
-                body: scriptBlock,
-                functionOrFilterKeyword: null
+                body: scriptBlock
             );
         }
 
