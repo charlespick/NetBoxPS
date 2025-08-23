@@ -19,7 +19,6 @@ namespace NetBoxPS.CodeGen
 {
     public static class Program
     {
-        // Fix 2: Simple vs complex type detection
         static readonly HashSet<Type> SimpleTypes = new HashSet<Type>
         {
             typeof(string), typeof(bool), typeof(byte), typeof(sbyte),
@@ -45,7 +44,6 @@ namespace NetBoxPS.CodeGen
             var functionAsts = new List<FunctionDefinitionAst>();
             var constructorAsts = new List<FunctionDefinitionAst>();
 
-            // Fix 6: Constructor dedupe
             var emittedTypes = new HashSet<Type>();
 
             foreach (var ep in endpoints)
@@ -75,7 +73,6 @@ namespace NetBoxPS.CodeGen
 
             foreach (var ast in constructorAsts.Concat(functionAsts))
             {
-                // Write the generated PowerShell AST to file as script text
                 System.IO.File.AppendAllText(args[0], ast.ToString() + "\n\n");
             }
 
@@ -130,23 +127,19 @@ namespace NetBoxPS.CodeGen
         {
             var type = UnwrapGenericType(objectType);
             var name = type.Name;
-            
-            // Remove common API response suffixes
+
             if (name.EndsWith("Response", StringComparison.OrdinalIgnoreCase))
                 name = name.Substring(0, name.Length - 8);
             if (name.EndsWith("Result", StringComparison.OrdinalIgnoreCase))
                 name = name.Substring(0, name.Length - 6);
-            
-            // Singularize
+
             name = Singularize(name);
-            
-            // Ensure PascalCase
+
             return char.ToUpper(name[0]) + name.Substring(1);
         }
 
         private static Type UnwrapGenericType(Type type)
         {
-            // Handle Task<T>, ApiResponse<T>, etc.
             if (type.IsGenericType)
             {
                 var genericArgs = type.GetGenericArguments();
@@ -161,23 +154,21 @@ namespace NetBoxPS.CodeGen
             if (string.IsNullOrEmpty(word))
                 return word;
 
-            // Handle common plural patterns
             if (word.EndsWith("ies", StringComparison.OrdinalIgnoreCase))
                 return word.Substring(0, word.Length - 3) + "y";
-            
+
             if (word.EndsWith("sses", StringComparison.OrdinalIgnoreCase) ||
                 word.EndsWith("shes", StringComparison.OrdinalIgnoreCase) ||
                 word.EndsWith("ches", StringComparison.OrdinalIgnoreCase) ||
                 word.EndsWith("xes", StringComparison.OrdinalIgnoreCase))
                 return word.Substring(0, word.Length - 2);
-            
+
             if (word.EndsWith("s", StringComparison.OrdinalIgnoreCase) && word.Length > 1)
                 return word.Substring(0, word.Length - 1);
-            
+
             return word;
         }
 
-        // Fix 3: Wrapper parameter flattening + ordering
         public static IEnumerable<FlattenedParameter> FlattenParametersForWrapper(IEnumerable<ParameterGroup> parameterGroups)
         {
             var flatParams = new List<FlattenedParameter>();
@@ -186,7 +177,6 @@ namespace NetBoxPS.CodeGen
             {
                 if (!group.IsComplex)
                 {
-                    // Primitive parameter - pass through directly
                     flatParams.Add(new FlattenedParameter(
                         name: group.Name,
                         type: group.Type,
@@ -199,12 +189,10 @@ namespace NetBoxPS.CodeGen
                 }
                 else
                 {
-                    // Complex parameter - flatten first-level properties
                     foreach (var prop in group.Properties)
                     {
                         if (IsComplexType(prop.ParameterType))
                         {
-                            // Complex nested property - expect a custom object
                             flatParams.Add(new FlattenedParameter(
                                 name: prop.Name,
                                 type: prop.ParameterType,
@@ -217,7 +205,6 @@ namespace NetBoxPS.CodeGen
                         }
                         else
                         {
-                            // Primitive property - lift to top level
                             flatParams.Add(new FlattenedParameter(
                                 name: prop.Name,
                                 type: prop.ParameterType,
@@ -263,29 +250,23 @@ namespace NetBoxPS.CodeGen
             return nested.Distinct();
         }
 
-        // Fix 5: AST correctness (constructor + attributes)
-        // Generate a strongly-typed "New-<Noun>" constructor with CmdletBinding,
-        // typed params, Mandatory where appropriate, and *conditional* assignments
-        // guarded by $PSBoundParameters.ContainsKey('<ParamName>').
+        // Generates a strongly-typed "New-<Noun>" constructor with CmdletBinding, typed params, Mandatory where appropriate, and conditional assignments.
         public static FunctionDefinitionAst GenerateConstructorFunctionAst(string noun, Type objectType)
         {
             var functionName = $"New-{noun}";
 
-            // Settable props
             var settableProperties = objectType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.CanWrite)
                 .ToList();
 
-            // ---- Parameters: typed + [Parameter()] + Mandatory where required ----
             var parameters = new List<ParameterAst>();
             for (int i = 0; i < settableProperties.Count; i++)
             {
                 var p = settableProperties[i];
                 var attrs = new List<AttributeBaseAst>();
 
-                // [Parameter(Mandatory=$true, Position=<i>)] for required properties
                 var namedArgs = new List<NamedAttributeArgumentAst>();
-                
+
                 if ((p.PropertyType.IsValueType && Nullable.GetUnderlyingType(p.PropertyType) == null) || IsRequiredProperty(p))
                 {
                     namedArgs.Add(new NamedAttributeArgumentAst(
@@ -310,7 +291,6 @@ namespace NetBoxPS.CodeGen
                     namedArguments: namedArgs
                 ));
 
-                // Add a type constraint using TypeConstraintAst instead of AttributeAst
                 attrs.Add(new TypeConstraintAst(
                     extent: null,
                     typeName: new TypeName(null, p.PropertyType.FullName)
@@ -324,7 +304,6 @@ namespace NetBoxPS.CodeGen
                 ));
             }
 
-            // [CmdletBinding()] and [OutputType([objectType])]
             var scriptAttrs = new List<AttributeAst>
     {
         new AttributeAst(null, new TypeName(null, "CmdletBinding"), new List<ExpressionAst>(), null),
@@ -334,10 +313,8 @@ namespace NetBoxPS.CodeGen
 
             var paramBlock = new ParamBlockAst(null, scriptAttrs, parameters);
 
-            // ---- Body ----
             var statements = new List<StatementAst>();
 
-            // Create object instance
             var hasParameterlessCtor = objectType.GetConstructor(Type.EmptyTypes) != null;
             ExpressionAst objectCreationExpression = hasParameterlessCtor
                 ? (ExpressionAst)new CommandExpressionAst(
@@ -360,7 +337,6 @@ namespace NetBoxPS.CodeGen
             var objVar = new VariableExpressionAst(null, "obj", false);
             statements.Add(new AssignmentStatementAst(null, objVar, TokenKind.Equals, objectCreationExpression, null));
 
-            // For each parameter: if ($PSBoundParameters.ContainsKey('Name')) { $obj.Name = $Name }
             foreach (var p in settableProperties)
             {
                 var containsKeyCall = new InvokeMemberExpressionAst(
@@ -397,7 +373,6 @@ namespace NetBoxPS.CodeGen
                 ));
             }
 
-            // Output the object
             statements.Add(new PipelineAst(null, new CommandAst[]
             {
         new CommandAst(null, new CommandElementAst[]
@@ -415,37 +390,27 @@ namespace NetBoxPS.CodeGen
                 isConfiguration: false
             );
 
-            // FIX: Remove parameters from FunctionDefinitionAst constructor - use param block only
             return new FunctionDefinitionAst(
                 extent: null,
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
                 isDynamic: false,
-                parameters: null, // Changed: Remove duplicate parameters - use param block instead
+                parameters: null,
                 body: scriptBlock,
                 functionOrFilterKeyword: null
             );
         }
 
-        // Helper method to determine if a property should be marked as required
         private static bool IsRequiredProperty(PropertyInfo property)
         {
-            // Check for common required attributes or naming patterns
             var attributes = property.GetCustomAttributes(true);
-            
-            // Check for RequiredAttribute, JsonRequiredAttribute, or similar
-            return attributes.Any(attr => 
+            return attributes.Any(attr =>
                 attr.GetType().Name.Contains("Required") ||
                 attr.GetType().Name.Contains("Mandatory"));
         }
 
-        // Fix 4: Wrapper must accept $Sdk (and typed reconstruction)
-        // Generate a "<Verb>-<Noun>" wrapper that:
-        // - adds [CmdletBinding()] and [OutputType]
-        // - adds *typed* parameters for flattened primitives and nested custom objects
-        // - reconstructs the parent complex body using conditional assignment guarded by $PSBoundParameters.ContainsKey('<Prop>')
-        // - preserves original parameter group order when invoking the SDK method
+        // Generates a <Verb>-<Noun> wrapper with CmdletBinding, OutputType, typed parameters, and reconstruction of complex bodies.
         public static FunctionDefinitionAst GenerateSdkWrapperFunctionAst(
             string verb,
             string noun,
@@ -455,10 +420,8 @@ namespace NetBoxPS.CodeGen
             var functionName = $"{verb}-{noun}";
             var flatParams = flattenedParameters.ToList();
 
-            // ---- Parameters ----
             var parameters = new List<ParameterAst>();
 
-            // $Sdk first with [Parameter(Mandatory=$true, Position=0)]
             var sdkNamedArgs = new List<NamedAttributeArgumentAst>
             {
                 new NamedAttributeArgumentAst(
@@ -489,7 +452,6 @@ namespace NetBoxPS.CodeGen
                 defaultValue: null
             ));
 
-            // Each flattened param gets a type constraint and [Parameter()]
             for (int i = 0; i < flatParams.Count; i++)
             {
                 var fp = flatParams[i];
@@ -498,12 +460,11 @@ namespace NetBoxPS.CodeGen
                     new NamedAttributeArgumentAst(
                         extent: null,
                         argumentName: "Position",
-                        argument: new ConstantExpressionAst(null, i + 1), // +1 because Sdk is position 0
+                        argument: new ConstantExpressionAst(null, i + 1),
                         expressionOmitted: false
                     )
                 };
 
-                // Mark complex types as mandatory if they don't have nullable properties
                 if (fp.IsComplex || (fp.Type.IsValueType && Nullable.GetUnderlyingType(fp.Type) == null))
                 {
                     namedArgs.Add(new NamedAttributeArgumentAst(
@@ -522,7 +483,6 @@ namespace NetBoxPS.CodeGen
                         positionalArguments: new List<ExpressionAst>(),
                         namedArguments: namedArgs
                     ),
-                    // Use TypeConstraintAst instead of AttributeAst for type constraints
                     new TypeConstraintAst(
                         null,
                         new TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName)
@@ -537,7 +497,6 @@ namespace NetBoxPS.CodeGen
                 ));
             }
 
-            // [CmdletBinding()] and [OutputType([UnwrappedReturnType])]
             var outputType = Program.UnwrapGenericType(endpoint.ObjectType);
             var scriptAttrs = new List<AttributeAst>
     {
@@ -554,17 +513,14 @@ namespace NetBoxPS.CodeGen
 
             var paramBlock = new ParamBlockAst(null, scriptAttrs, parameters);
 
-            // ---- Body ----
             var statements = new List<StatementAst>();
             var orderedGroups = flatParams.GroupBy(fp => fp.SourceGroupPosition).OrderBy(g => g.Key);
             var methodArguments = new List<ExpressionAst>();
 
             foreach (var group in orderedGroups)
             {
-                // group corresponds to one original SDK parameter (either a primitive, or a complex body)
                 var first = group.First();
 
-                // If there are NO members with SourceProperty -> this was a primitive original param
                 var isComplexGroup = group.Any(gp => !string.IsNullOrEmpty(gp.SourceProperty));
                 if (!isComplexGroup)
                 {
@@ -572,12 +528,10 @@ namespace NetBoxPS.CodeGen
                     continue;
                 }
 
-                // Reconstruct typed SDK model for the complex group
                 var modelType = first.SourceGroupType;
                 var objVarName = $"obj{first.SourceGroupPosition}";
                 var objVar = new VariableExpressionAst(null, objVarName, false);
 
-                // $objX = New-Object -TypeName "Namespace.Model"
                 var newObjExpr = new CommandExpressionAst(
                     null,
                     new CommandAst(null, new CommandElementAst[]
@@ -590,7 +544,6 @@ namespace NetBoxPS.CodeGen
                 );
                 statements.Add(new AssignmentStatementAst(null, objVar, TokenKind.Equals, newObjExpr, null));
 
-                // For each lifted property: if ($PSBoundParameters.ContainsKey('<name>')) { $objX.Prop = $<name> }
                 foreach (var fp in group)
                 {
                     var containsKeyCall = new InvokeMemberExpressionAst(
@@ -630,7 +583,6 @@ namespace NetBoxPS.CodeGen
                 methodArguments.Add(objVar);
             }
 
-            // $Sdk.<MethodName>(args...)
             var invokeMember = new InvokeMemberExpressionAst(
                 extent: null,
                 expression: new VariableExpressionAst(null, "Sdk", false),
@@ -639,7 +591,6 @@ namespace NetBoxPS.CodeGen
                 @static: false
             );
 
-            // Final call (pipe expression directly; if return is void, nothing is emitted)
             statements.Add(new PipelineAst(null, new CommandAst[]
             {
         new CommandExpressionAst(null, invokeMember, null)
@@ -653,19 +604,17 @@ namespace NetBoxPS.CodeGen
                 isConfiguration: false
             );
 
-            // FIX: Remove parameters from FunctionDefinitionAst constructor - use param block only
             return new FunctionDefinitionAst(
                 extent: null,
                 name: functionName,
                 isFilter: false,
                 isWorkflow: false,
                 isDynamic: false,
-                parameters: null, // Changed: Remove duplicate parameters - use param block instead
+                parameters: null,
                 body: scriptBlock,
                 functionOrFilterKeyword: null
             );
         }
-
 
         public class DummyParameterInfo : ParameterInfo
         {
@@ -676,7 +625,6 @@ namespace NetBoxPS.CodeGen
             }
         }
 
-        // Fix 3: ParameterGroup with Position
         public class ParameterGroup
         {
             public string Name { get; }
@@ -695,7 +643,6 @@ namespace NetBoxPS.CodeGen
             }
         }
 
-        // Fix 3: FlattenedParameter with source param position and type
         public class FlattenedParameter
         {
             public string Name { get; }
@@ -705,7 +652,7 @@ namespace NetBoxPS.CodeGen
             public string SourceProperty { get; }
             public int SourceGroupPosition { get; }
             public Type SourceGroupType { get; }
-            
+
             public bool IsComplexFromGroup => !string.IsNullOrEmpty(SourceProperty);
 
             public FlattenedParameter(string name, Type type, bool isComplex, string sourceGroup, string sourceProperty, int sourceGroupPosition, Type sourceGroupType)
@@ -720,7 +667,6 @@ namespace NetBoxPS.CodeGen
             }
         }
 
-        // Fix 3: Track parameter positions
         public static IEnumerable<ParameterGroup> GetParameterGroups(IEnumerable<ParameterInfo> parameters)
         {
             var paramList = parameters.ToList();
