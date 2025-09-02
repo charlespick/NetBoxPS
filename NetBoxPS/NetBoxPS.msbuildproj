@@ -9,7 +9,6 @@
   </PropertyGroup>
   <!-- Ensure correct build order: this project depends on the generator -->
   <ItemGroup>
-    <ProjectReference Include="..\NetBoxPS.CodeGen\NetBoxPS.CodeGen.csproj" />
     <ProjectReference Include="..\NetBoxSdk\NetBoxSdk.csproj" />
   </ItemGroup>
   <!-- Inputs that should trigger regeneration (SDK dlls, codegen exe, config, etc.) -->

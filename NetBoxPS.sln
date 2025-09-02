@@ -5,12 +5,12 @@ VisualStudioVersion = 17.14.36408.4
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetBoxSdk", "NetBoxSdk\NetBoxSdk.csproj", "{989E5B10-7B7C-4098-BF43-0F20A35124C6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetBoxPS.CodeGen", "NetBoxPS.CodeGen\NetBoxPS.CodeGen.csproj", "{68B7E2C4-91D0-7343-C079-680849A1034B}"
-EndProject
 Project("{13B669BE-BB05-4DDF-9536-439F39A36129}") = "NetBoxPS", "NetBoxPS\NetBoxPS.msbuildproj", "{A5FD5BA7-CFCE-2F9C-77A7-40FD611F84FF}"
 	ProjectSection(ProjectDependencies) = postProject
 		{989E5B10-7B7C-4098-BF43-0F20A35124C6} = {989E5B10-7B7C-4098-BF43-0F20A35124C6}
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerShCodeGen", "PowerShCodeGen\PowerShCodeGen.csproj", "{AF6EE845-9352-4534-9652-59514C52FBB3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -22,14 +22,14 @@ Global
 		{989E5B10-7B7C-4098-BF43-0F20A35124C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{989E5B10-7B7C-4098-BF43-0F20A35124C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{989E5B10-7B7C-4098-BF43-0F20A35124C6}.Release|Any CPU.Build.0 = Release|Any CPU
-		{68B7E2C4-91D0-7343-C079-680849A1034B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{68B7E2C4-91D0-7343-C079-680849A1034B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{68B7E2C4-91D0-7343-C079-680849A1034B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{68B7E2C4-91D0-7343-C079-680849A1034B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A5FD5BA7-CFCE-2F9C-77A7-40FD611F84FF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A5FD5BA7-CFCE-2F9C-77A7-40FD611F84FF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A5FD5BA7-CFCE-2F9C-77A7-40FD611F84FF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A5FD5BA7-CFCE-2F9C-77A7-40FD611F84FF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF6EE845-9352-4534-9652-59514C52FBB3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF6EE845-9352-4534-9652-59514C52FBB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF6EE845-9352-4534-9652-59514C52FBB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF6EE845-9352-4534-9652-59514C52FBB3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

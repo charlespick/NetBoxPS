@@ -1,24 +1,13 @@
 ﻿
-// TODO: Using attribute-name contains “Required/Mandatory” may not match how the generator marks required fields. This can mis-mark parameters as Mandatory.
-// TODO: Delete/void endpoints produce *-Void wrappers. Derive noun from the primary resource (parameter or declaring API class) when return type is void/non-informative.
-// TODO: Refine handling of SDK names, actions, and such to ensure full coverage
-// TODO: Properties with the same name across multiple complex inputs collide at the wrapper level. You have SourceGroup, but you don’t incorporate it into the parameter name.
-// TODO: You don’t filter CanWrite when flattening group properties, so wrapper reconstruction can attempt $obj.Prop = $Prop on non-writable members.
-// TODO: Uses New-Object unconditionally. If the model lacks a default ctor, wrapper will fail. Mirror your constructor logic (fallback to [Type]::new()).
-
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using System.Management.Automation.Language;
 using System.Management.Automation;
-using System.Text.RegularExpressions;
 
-namespace NetBoxPS.CodeGen
+namespace PowerShCodeGen
 {
-    public static class Program
+    internal class Program
     {
+
         static readonly HashSet<Type> SimpleTypes = new HashSet<Type>
         {
             typeof(string), typeof(bool), typeof(byte), typeof(sbyte),
@@ -36,9 +25,10 @@ namespace NetBoxPS.CodeGen
 
         public static bool IsComplexType(Type type) => !IsSimpleType(type);
 
-        public static int Main(string[] args)
+        static void Main(string[] args)
         {
-            var sdkAssembly = Assembly.LoadFrom(args[1]);
+            var sdkAssembly = typeof(NetBoxSdk.Api.CircuitsApi).Assembly;
+
             var endpoints = GetEndpoints(sdkAssembly);
 
             var functionAsts = new List<FunctionDefinitionAst>();
@@ -77,7 +67,6 @@ namespace NetBoxPS.CodeGen
             }
 
             Console.WriteLine("PowerShell function generation complete!");
-            return 0;
         }
 
         public static IEnumerable<ApiEndpoint> GetEndpoints(Assembly sdkAssembly)
@@ -589,12 +578,12 @@ namespace NetBoxPS.CodeGen
                             redirections: null)
                     });
 
-                                statements.Add(new AssignmentStatementAst(
-                                    extent: null,
-                                    left: objVar,
-                                    @operator: TokenKind.Equals,
-                                    right: newObjPipeline,
-                                    errorPosition: null));
+                statements.Add(new AssignmentStatementAst(
+                    extent: null,
+                    left: objVar,
+                    @operator: TokenKind.Equals,
+                    right: newObjPipeline,
+                    errorPosition: null));
                 foreach (var fp in group)
                 {
                     var containsKeyCall = new InvokeMemberExpressionAst(
@@ -747,4 +736,5 @@ namespace NetBoxPS.CodeGen
             public IEnumerable<ParameterInfo> Parameters { get; set; }
         }
     }
+
 }
