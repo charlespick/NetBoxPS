@@ -7,13 +7,10 @@
 // TODO: Uses New-Object unconditionally. If the model lacks a default ctor, wrapper will fail. Mirror your constructor logic (fallback to [Type]::new()).
 
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using System.Management.Automation.Language;
 using System.Management.Automation;
-using System.Text.RegularExpressions;
+using System.Reflection.Metadata;
 
 namespace NetBoxPS.CodeGen
 {
@@ -28,26 +25,79 @@ namespace NetBoxPS.CodeGen
             typeof(Guid), typeof(TimeSpan), typeof(Uri)
         };
 
-        static bool IsSimpleType(Type type)
+        public static bool IsComplexType(Type type)
         {
             type = Nullable.GetUnderlyingType(type) ?? type;
-            return type.IsEnum || SimpleTypes.Contains(type);
+            return !(type.IsEnum || SimpleTypes.Contains(type));
         }
-
-        public static bool IsComplexType(Type type) => !IsSimpleType(type);
 
         public static int Main(string[] args)
         {
-            var sdkAssembly = Assembly.LoadFrom(args[1]);
-            var endpoints = GetEndpoints(sdkAssembly);
+            #region: Input handling
+            string inputAssemblyPath;
+            string outputFolderPath;
 
-            var functionAsts = new List<FunctionDefinitionAst>();
-            var constructorAsts = new List<FunctionDefinitionAst>();
+            if (args.Length == 0)
+            {
+                // Assume default locations
+                var repoRoot = System.IO.Path.GetFullPath(
+                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
+                inputAssemblyPath = System.IO.Path.Combine(repoRoot, "NetBoxSdk", "bin", "Debug", "netstandard2.0", "NetBoxSdk.dll");
+                outputFolderPath = System.IO.Path.Combine(repoRoot, "NetBoxPS");
+            }
+            else if (args.Length == 2)
+            {
+                inputAssemblyPath = args[0];
+                outputFolderPath = args[1];
+            }
+            else
+            {
+                Console.Error.WriteLine("Usage: NetBoxPS.CodeGen <input-assembly-path> <output-folder>");
+                Console.Error.WriteLine("Or run with no arguments to use default locations.");
+                return 1;
+            }
+            if (!System.IO.File.Exists(inputAssemblyPath))
+            {
+                Console.Error.WriteLine($"Error: Input assembly not found at '{inputAssemblyPath}'");
+                return 1;
+            }
+            if (!System.IO.Directory.Exists(outputFolderPath))
+            {
+                Console.Error.WriteLine($"Error: Output folder not found at '{outputFolderPath}'");
+                return 1;
+            }
+            Console.WriteLine($"Input Assembly: {inputAssemblyPath}");
+            #endregion
 
-            var emittedTypes = new HashSet<Type>();
+            // Gather all runtime assemblies (for .NET Standard, use the runtime directory)
+            var runtimeAssemblies = Directory.GetFiles(
+                Path.GetDirectoryName(typeof(object).Assembly.Location), "*.dll");
+
+            // Add the SDK assembly path
+            var resolver = new PathAssemblyResolver(runtimeAssemblies.Concat(new[] { inputAssemblyPath }));
+
+            using var mlc = new MetadataLoadContext(resolver);
+
+            // Load the SDK assembly in the metadata context
+            var sdkAssembly = mlc.LoadFromAssemblyPath(inputAssemblyPath);
+
+            // Use the loaded assembly for endpoint discovery
+            var endpoints = GetEndpointsWithDeclaringType(sdkAssembly);
+
+            var functionAstsByDomain = new Dictionary<string, List<FunctionDefinitionAst>>();
+            var constructorAstsByDomain = new Dictionary<string, List<FunctionDefinitionAst>>();
+            var emittedTypesByDomain = new Dictionary<string, HashSet<Type>>();
 
             foreach (var ep in endpoints)
             {
+                var domain = ep.DeclaringType.Name; // Use class name as domain
+                if (!functionAstsByDomain.ContainsKey(domain))
+                    functionAstsByDomain[domain] = new List<FunctionDefinitionAst>();
+                if (!constructorAstsByDomain.ContainsKey(domain))
+                    constructorAstsByDomain[domain] = new List<FunctionDefinitionAst>();
+                if (!emittedTypesByDomain.ContainsKey(domain))
+                    emittedTypesByDomain[domain] = new HashSet<Type>();
+
                 var verb = SelectPowerShellVerb(ep.MethodName);
                 var noun = SelectPowerShellNoun(ep.ObjectType);
 
@@ -61,23 +111,65 @@ namespace NetBoxPS.CodeGen
 
                 foreach (var nested in nestedObjects)
                 {
-                    if (!emittedTypes.Add(nested)) continue;
+                    if (!emittedTypesByDomain[domain].Add(nested)) continue;
                     var nestedNoun = SelectPowerShellNoun(nested);
                     var ctorAst = GenerateConstructorFunctionAst(nestedNoun, nested);
-                    constructorAsts.Add(ctorAst);
+                    constructorAstsByDomain[domain].Add(ctorAst);
                 }
 
                 var funcAst = GenerateSdkWrapperFunctionAst(verb, noun, flatParams, ep);
-                functionAsts.Add(funcAst);
+                functionAstsByDomain[domain].Add(funcAst);
             }
 
-            foreach (var ast in constructorAsts.Concat(functionAsts))
+            foreach (var domain in functionAstsByDomain.Keys)
             {
-                System.IO.File.AppendAllText(args[0], ast.ToString() + "\n\n");
+                var outputFile = System.IO.Path.Combine(outputFolderPath, $"NetBoxPS.{domain}.Generated.ps1");
+                foreach (var ast in constructorAstsByDomain[domain].Concat(functionAstsByDomain[domain]))
+                {
+                    System.IO.File.AppendAllText(outputFile, ast.ToString() + "\n\n");
+                }
             }
 
             Console.WriteLine("PowerShell function generation complete!");
             return 0;
+        }
+
+        // New endpoint type to include DeclaringType
+        public class ApiEndpointWithDeclaringType : Program.ApiEndpoint
+        {
+            public Type DeclaringType { get; set; }
+        }
+
+        // Modified endpoint discovery to include DeclaringType
+        public static IEnumerable<ApiEndpointWithDeclaringType> GetEndpointsWithDeclaringType(Assembly sdkAssembly)
+        {
+            var endpoints = new List<ApiEndpointWithDeclaringType>();
+            var verbs = new[] { "Get", "Create", "Delete", "Update" };
+
+            foreach (var type in sdkAssembly.GetExportedTypes())
+            {
+                if (!type.IsClass || type.IsAbstract)
+                    continue;
+
+                foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                {
+                    if (!verbs.Any(v => method.Name.StartsWith(v, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    if (method.IsSpecialName)
+                        continue;
+
+                    endpoints.Add(new ApiEndpointWithDeclaringType
+                    {
+                        MethodName = method.Name,
+                        ObjectType = method.ReturnType,
+                        Parameters = method.GetParameters(),
+                        DeclaringType = type
+                    });
+                }
+            }
+
+            return endpoints;
         }
 
         public static IEnumerable<ApiEndpoint> GetEndpoints(Assembly sdkAssembly)
@@ -286,14 +378,14 @@ namespace NetBoxPS.CodeGen
 
                 attrs.Add(new AttributeAst(
                     extent: null,
-                    typeName: new TypeName(null, "Parameter"),
+                    typeName: new System.Management.Automation.Language.TypeName(null, "Parameter"),
                     positionalArguments: new List<ExpressionAst>(),
                     namedArguments: namedArgs
                 ));
 
                 attrs.Add(new TypeConstraintAst(
                     extent: null,
-                    typeName: new TypeName(null, p.PropertyType.FullName)
+                    typeName: new System.Management.Automation.Language.TypeName(null, p.PropertyType.FullName)
                 ));
 
                 parameters.Add(new ParameterAst(
@@ -306,9 +398,9 @@ namespace NetBoxPS.CodeGen
 
             var scriptAttrs = new List<AttributeAst>
     {
-        new AttributeAst(null, new TypeName(null, "CmdletBinding"), new List<ExpressionAst>(), null),
-        new AttributeAst(null, new TypeName(null, "OutputType"),
-            new List<ExpressionAst>{ new TypeExpressionAst(null, new TypeName(null, objectType.FullName)) }, null)
+        new AttributeAst(null, new System.Management.Automation.Language.TypeName(null, "CmdletBinding"), new List<ExpressionAst>(), null),
+        new AttributeAst(null, new System.Management.Automation.Language.TypeName(null, "OutputType"),
+            new List<ExpressionAst>{ new TypeExpressionAst(null, new System.Management.Automation.Language.TypeName(null, objectType.FullName)) }, null)
     };
 
             var paramBlock = new ParamBlockAst(null, scriptAttrs, parameters);
@@ -346,7 +438,7 @@ namespace NetBoxPS.CodeGen
                 // [Full.Type.Name]::new() wrapped in a pipeline (StatementAst)
                 var invokeNewExpr = new InvokeMemberExpressionAst(
                     extent: null,
-                    expression: new TypeExpressionAst(null, new TypeName(null, objectType.FullName)),
+                    expression: new TypeExpressionAst(null, new System.Management.Automation.Language.TypeName(null, objectType.FullName)),
                     method: new StringConstantExpressionAst(null, "new", StringConstantType.BareWord),
                     arguments: null,
                     @static: true);
@@ -482,7 +574,7 @@ namespace NetBoxPS.CodeGen
                 attributes: new List<AttributeBaseAst> {
                     new AttributeAst(
                         extent: null,
-                        typeName: new TypeName(null, "Parameter"),
+                        typeName: new System.Management.Automation.Language.TypeName(null, "Parameter"),
                         positionalArguments: new List<ExpressionAst>(),
                         namedArguments: sdkNamedArgs
                     )
@@ -517,13 +609,13 @@ namespace NetBoxPS.CodeGen
                 {
                     new AttributeAst(
                         extent: null,
-                        typeName: new TypeName(null, "Parameter"),
+                        typeName: new System.Management.Automation.Language.TypeName(null, "Parameter"),
                         positionalArguments: new List<ExpressionAst>(),
                         namedArguments: namedArgs
                     ),
                     new TypeConstraintAst(
                         null,
-                        new TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName)
+                        new System.Management.Automation.Language.TypeName(null, (Nullable.GetUnderlyingType(fp.Type) ?? fp.Type).FullName)
                     )
                 };
 
@@ -538,14 +630,14 @@ namespace NetBoxPS.CodeGen
             var outputType = Program.UnwrapGenericType(endpoint.ObjectType);
             var scriptAttrs = new List<AttributeAst>
     {
-        new AttributeAst(null, new TypeName(null, "CmdletBinding"), new List<ExpressionAst>(), null)
+        new AttributeAst(null, new System.Management.Automation.Language.TypeName(null, "CmdletBinding"), new List<ExpressionAst>(), null)
     };
             if (outputType != typeof(void))
             {
                 scriptAttrs.Add(new AttributeAst(
                     null,
-                    new TypeName(null, "OutputType"),
-                    new List<ExpressionAst> { new TypeExpressionAst(null, new TypeName(null, outputType.FullName)) }
+                    new System.Management.Automation.Language.TypeName(null, "OutputType"),
+                    new List<ExpressionAst> { new TypeExpressionAst(null, new System.Management.Automation.Language.TypeName(null, outputType.FullName)) }
                 , null));
             }
 
@@ -589,12 +681,12 @@ namespace NetBoxPS.CodeGen
                             redirections: null)
                     });
 
-                                statements.Add(new AssignmentStatementAst(
-                                    extent: null,
-                                    left: objVar,
-                                    @operator: TokenKind.Equals,
-                                    right: newObjPipeline,
-                                    errorPosition: null));
+                statements.Add(new AssignmentStatementAst(
+                    extent: null,
+                    left: objVar,
+                    @operator: TokenKind.Equals,
+                    right: newObjPipeline,
+                    errorPosition: null));
                 foreach (var fp in group)
                 {
                     var containsKeyCall = new InvokeMemberExpressionAst(
