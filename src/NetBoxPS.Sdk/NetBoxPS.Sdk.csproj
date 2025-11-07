@@ -1,5 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageId>NetBoxPS.Sdk</PackageId>
+    <AssemblyName>NetBoxPS.Sdk</AssemblyName>
+    <RootNamespace>NetBoxPS.Sdk</RootNamespace>
+    <OpenApiPatchScript>$(MSBuildThisFileDirectory)PatchOpenApiSpec.ps1</OpenApiPatchScript>
+    <OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
+    <SchemaDir>$(MSBuildThisFileDirectory)Schema</SchemaDir>
+    <OpenApiSpecYaml>$(SchemaDir)$(DirectorySeparatorChar)openapi.yaml</OpenApiSpecYaml>
+    <OpenApiSpecJson>$(SchemaDir)$(DirectorySeparatorChar)openapi.json</OpenApiSpecJson>
+    <GeneratedDir>$(MSBuildThisFileDirectory)Generated</GeneratedDir>
+    <StampFile>$(GeneratedDir)$(DirectorySeparatorChar).sdk.stamp</StampFile>
+    <PatchedStampFile>$(GeneratedDir)$(DirectorySeparatorChar).patched.stamp</PatchedStampFile>
+    <PackageName>NetBoxPS.Sdk</PackageName>
+    <JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
+    <RunCodegen Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipCompilerExecution)' != 'true'">true</RunCodegen>
+    <PowerShellExe Condition="'$(PowerShellExe)' == ''">pwsh</PowerShellExe>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
@@ -12,21 +31,6 @@
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
     <PackageReference Include="System.Threading.Channels" Version="9.0.8" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <OpenApiPatchScript>$(MSBuildThisFileDirectory)PatchOpenApiSpec.ps1</OpenApiPatchScript>
-    <OpenApiSpecUrl>https://demo.netbox.dev/api/schema/</OpenApiSpecUrl>
-    <SchemaDir>Schema</SchemaDir>
-    <OpenApiSpecYaml>$(SchemaDir)\openapi.yaml</OpenApiSpecYaml>
-    <OpenApiSpecJson>$(SchemaDir)\openapi.json</OpenApiSpecJson>
-    <GeneratedDir>Generated</GeneratedDir>
-    <StampFile>$(GeneratedDir)\.sdk.stamp</StampFile>
-	<PatchedStampFile>$(GeneratedDir)\.patched.stamp</PatchedStampFile>
-    <PackageName>NetBoxSdk</PackageName>
-    <JavaMemoryOptions>-Xms4g -Xmx12g</JavaMemoryOptions>
-    <RunCodegen Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipCompilerExecution)' != 'true'">true</RunCodegen>
-  </PropertyGroup>
 
   <!-- Preflight check for required tools -->
   <Target Name="CheckEnvironment" Condition="'$(RunCodegen)' == 'true'" DependsOnTargets="" Inputs="" Outputs="">
@@ -64,10 +68,10 @@
           Condition="'$(RunCodegen)' == 'true'"
           DependsOnTargets="EnsureSchemaDir"
           Inputs="$(OpenApiSpecYaml)"
-          Outputs="$(SchemaDir)\.fetched.stamp">
+          Outputs="$(SchemaDir)$(DirectorySeparatorChar).fetched.stamp">
     <Message Importance="high" Text="Fetching OpenAPI spec from $(OpenApiSpecUrl) (incremental)" />
     <Exec Command="curl -L -o &quot;$(OpenApiSpecYaml)&quot; &quot;$(OpenApiSpecUrl)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
-    <WriteLinesToFile File="$(SchemaDir)\.fetched.stamp"
+    <WriteLinesToFile File="$(SchemaDir)$(DirectorySeparatorChar).fetched.stamp"
                       Lines="Fetched: %(UtcNow.Identity) from $(OpenApiSpecUrl)"
                       Overwrite="true" />
   </Target>
@@ -76,7 +80,7 @@
   <Target Name="ConvertYamlToJson"
           DependsOnTargets="FetchOpenApiSpec"
           Condition="'$(RunCodegen)' == 'true'"
-          Inputs="$(OpenApiSpecYaml);$(SchemaDir)\.fetched.stamp"
+          Inputs="$(OpenApiSpecYaml);$(SchemaDir)$(DirectorySeparatorChar).fetched.stamp"
           Outputs="$(OpenApiSpecJson)">
     <Message Importance="high" Text="Converting YAML to JSON (incremental)..." />
     <Exec Command="npx swagger-cli bundle &quot;$(OpenApiSpecYaml)&quot; -o &quot;$(OpenApiSpecJson)&quot; --type json" WorkingDirectory="$(MSBuildThisFileDirectory)" />
@@ -86,7 +90,7 @@
   <Target Name="PatchOpenApiJson" DependsOnTargets="ConvertYamlToJson" Condition="'$(RunCodegen)' == 'true'" Inputs="$(OpenApiSpecJson);$(OpenApiPatchScript)" Outputs="$(PatchedStampFile)">
     <Message Importance="high" Text="Patching OpenAPI spec (incremental)..." />
     <Copy SourceFiles="$(OpenApiSpecJson)" DestinationFiles="$(OpenApiSpecJson).bak" SkipUnchangedFiles="true" />
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    <Exec Command="$(PowerShellExe) -NoProfile -ExecutionPolicy Bypass -File &quot;$(OpenApiPatchScript)&quot; -Path &quot;$(OpenApiSpecJson)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
     <WriteLinesToFile File="$(PatchedStampFile)" Lines="Patched: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
   </Target>
 
@@ -94,19 +98,19 @@
   <Target Name="GenerateOpenApiClient" Condition="'$(RunCodegen)' == 'true'" DependsOnTargets="CheckEnvironment;EnsureNodeModules;PatchOpenApiJson" Inputs="$(PatchedStampFile);openapi-generator-config.json;.openapi-generator-ignore;package-lock.json" Outputs="$(StampFile)" BeforeTargets="CoreCompile">
     <Message Importance="high" Text="Generating C# client from OpenAPI spec (incremental)..." />
     <MakeDir Directories="$(GeneratedDir)" Condition="!Exists('$(GeneratedDir)')" />
-    <Exec Command="npx openapi-generator-cli generate ^&#xD;&#xA;            -i &quot;$(OpenApiSpecJson)&quot; ^&#xD;&#xA;            -o &quot;$(GeneratedDir)&quot; ^&#xD;&#xA;            --ignore-file-override &quot;.openapi-generator-ignore&quot; ^&#xD;&#xA;            -c &quot;openapi-generator-config.json&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
+    <Exec Command="npx openapi-generator-cli generate -i &quot;$(OpenApiSpecJson)&quot; -o &quot;$(GeneratedDir)&quot; --ignore-file-override &quot;.openapi-generator-ignore&quot; -c &quot;openapi-generator-config.json&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" EnvironmentVariables="JAVA_OPTS=$(JavaMemoryOptions)" />
     <WriteLinesToFile File="$(StampFile)" Lines="Generated: %(UtcNow.Identity) from $(OpenApiSpecJson)" Overwrite="true" />
   </Target>
 
   <!-- Prevent default glob from picking these up on the next build too -->
   <ItemGroup>
-    <Compile Remove="$(GeneratedDir)\**\*.cs" />
+    <Compile Remove="$(GeneratedDir)/**/*.cs" />
   </ItemGroup>
 
   <!-- After generation, dynamically add the files to Compile before CoreCompile -->
   <Target Name="IncludeGeneratedSources" DependsOnTargets="GenerateOpenApiClient" Condition="'$(DesignTimeBuild)' != 'true'" BeforeTargets="CoreCompile">
     <ItemGroup>
-      <Compile Include="$(GeneratedDir)\**\*.cs">
+      <Compile Include="$(GeneratedDir)/**/*.cs">
         <AutoGen>true</AutoGen>
         <DesignTime>false</DesignTime>
       </Compile>
@@ -120,7 +124,7 @@
   </Target>
 
   <ItemGroup Condition="'$(DesignTimeBuild)' == 'true' or '$(RunCodegen)' != 'true'">
-    <Compile Include="$(GeneratedDir)\**\*.cs">
+    <Compile Include="$(GeneratedDir)/**/*.cs">
       <AutoGen>true</AutoGen>
       <DesignTime>true</DesignTime>
     </Compile>

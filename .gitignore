@@ -132,7 +132,8 @@ $RECYCLE.BIN/
 
 _NCrunch*
 .vs
-NetBoxSdk/node_modules
-NetBoxSdk/openapi.*
-NetBoxSdk/Generated
-NetBoxSdk/Schema
+src/NetBoxPS.Sdk/node_modules
+src/NetBoxPS.Sdk/openapi.*
+src/NetBoxPS.Sdk/Generated
+src/NetBoxPS.Sdk/Schema
+src/NetBoxPS.Module/module

@@ -4,7 +4,7 @@
   "nameMappings": { "IPAddress": "NbIPAddress" },
   "additionalProperties": {
     "targetFramework": "netstandard2.0",
-    "packageName": "NetBoxSdk",
+    "packageName": "NetBoxPS.Sdk",
     "modelPropertyNaming": "PascalCase"
   }
 }

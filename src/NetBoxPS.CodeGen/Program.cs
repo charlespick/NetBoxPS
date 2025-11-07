@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Management.Automation.Language;
 using System.Management.Automation;
 
-namespace PowerShCodeGen
+namespace NetBoxPS.CodeGen
 {
     internal class Program
     {
@@ -27,7 +27,7 @@ namespace PowerShCodeGen
 
         static void Main(string[] args)
         {
-            var sdkAssembly = typeof(NetBoxSdk.Api.CircuitsApi).Assembly;
+            var sdkAssembly = typeof(NetBoxPS.Sdk.Api.CircuitsApi).Assembly;
 
             var endpoints = GetEndpoints(sdkAssembly);
 
