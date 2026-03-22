@@ -1,4 +1,4 @@
-# NetboxRest
+# NetBoxPS
 
 This is a powershell module for interacting with NetBox via the REST API
 
