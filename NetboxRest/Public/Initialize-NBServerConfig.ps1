@@ -28,7 +28,7 @@ function Initialize-NBServerConfig {
     }
 
     if ($SaveToDisk) {
-        $configPath = Join-Path $HOME '.netboxpsconfig.json'
+        $configPath = Join-Path $HOME '.netboxrestconfig.json'
         $script:NBConfig | ConvertTo-Json | Set-Content -Path $configPath -Force
         Write-Verbose "Configuration saved to $configPath"
     }

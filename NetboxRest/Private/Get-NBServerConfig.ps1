@@ -6,7 +6,7 @@ function Get-NBServerConfig {
         return $script:NBConfig
     }
 
-    $configPath = Join-Path $HOME '.netboxpsconfig.json'
+    $configPath = Join-Path $HOME '.netboxrestconfig.json'
     if (Test-Path $configPath) {
         $config = Get-Content $configPath -Raw | ConvertFrom-Json
         $script:NBConfig = @{

@@ -1,17 +1,17 @@
-# NetBoxPS
+# NetboxRest
 
 This is a powershell module for interacting with NetBox via the REST API
 
 ## Getting started
 
 1. `$PSVersionTable` Ensure you are running Powershell 7+
-2. `Install-Module NetBoxPS` Install NetboxPS
+2. `Install-Module NetboxRest` Install NetboxRest
 3. `Initialize-NBServerConfig -Host "netbox.domain.com" -APIToken (Read-Host -AsSecureString "Enter API Token")` Configure 
 4. `Get-NBObject -ObjectType "dcim/devices"` Example command to get devices from NetBox
 
 ## Concept
 
-NetboxPS is a thin wrapper around the NetBox API that provides just enough structure for standard operations while making the project not a nightmare to maintain. 
+NetboxRest is a thin wrapper around the NetBox API that provides just enough structure for standard operations while making the project not a nightmare to maintain. 
 
 ### Object Types
 
@@ -43,9 +43,9 @@ When you pipe an object into `Set-NBObject`, `Update-NBObject`, or `Remove-NBObj
 
 `Initialize-NBServerConfig -Host "netbox.domain.com" -APIToken (Read-Host -AsSecureString "Enter API Token")`
 
-This command initializes the server configuration into memory for the current session. You can also save the configuration to disk for future sessions by adding the `-SaveToDisk` parameter. The configuration (including API key) is saved to a file in the user's home directory named `.netboxpsconfig.json` in PLAIN TEXT (be careful).
+This command initializes the server configuration into memory for the current session. You can also save the configuration to disk for future sessions by adding the `-SaveToDisk` parameter. The configuration (including API key) is saved to a file in the user's home directory named `.netboxrestconfig.json` in PLAIN TEXT (be careful).
 
-If you call a NetBoxPS cmdlet and no server configuration is found in memory, it will attempt to load the configuration from the `.netboxpsconfig.json` file in the user's home directory. Otherwise you will get an error indicating no server configuration is found.
+If you call a NetboxRest cmdlet and no server configuration is found in memory, it will attempt to load the configuration from the `.netboxrestconfig.json` file in the user's home directory. Otherwise you will get an error indicating no server configuration is found.
 
 ## Example Usage
 
@@ -54,6 +54,9 @@ If you call a NetBoxPS cmdlet and no server configuration is found in memory, it
 New-NBObject -ObjectType "dcim/devices" -Body @{
     name = "server02"
     status = "active"
+    site = 1
+    device_type = 3
+    role = 9
 }
 
 # Update via pipeline
@@ -69,4 +72,7 @@ Get-NBObject -ObjectType "dcim/devices"
 
 # Filter devices
 Get-NBObject -ObjectType "dcim/devices" -Filter @{ status = "active" }
+
+# Filter using Django-style lookups
+Get-NBObject -ObjectType "dcim/devices" -Filter @{ name__icontains = "router" }
 ```

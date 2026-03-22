@@ -1,5 +1,5 @@
 @{
-    RootModule        = 'NetBoxPS.psm1'
+    RootModule        = 'NetboxRest.psm1'
     ModuleVersion     = '0.1.0'
     GUID              = 'a3e6b2d4-8f1c-4e5a-9d7b-2c8f0e3a1b5d'
     Author            = 'Charles Pick'
@@ -19,7 +19,7 @@
     PrivateData        = @{
         PSData = @{
             Tags       = @('NetBox', 'API', 'REST', 'DCIM', 'IPAM')
-            ProjectUri = 'https://github.com/charlespick/NetBoxPS'
+            ProjectUri = 'https://github.com/charlespick/NetboxRest'
         }
     }
 }
