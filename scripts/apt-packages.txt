@@ -1,5 +1,0 @@
-# Debian/Ubuntu packages required to build NetBoxPS in the Codespaces/Codex environment.
-dotnet-sdk-8.0
-wget
-gpg
-apt-transport-https

@@ -1,65 +1,72 @@
 # NetBoxPS
 
-NetBoxPS is a build system for a self-generated PowerShell module that talks to the NetBox API. The repository holds the tooling
-required to download an OpenAPI schema, patch it, generate a .NET SDK, and then reflect over that SDK to produce PowerShell
-functions. The generated module lives entirely under source control–friendly folders so it can be rebuilt on demand.
+This is a powershell module for interacting with NetBox via the REST API
 
-> **Heads-up:** The checked-in code is not the PowerShell module itself. Running the build regenerates the module artifacts.
+## Getting started
 
-## Repository layout
+1. `$PSVersionTable` Ensure you are running Powershell 7+
+2. `Install-Module NetBoxPS` Install NetboxPS
+3. `Initialize-NBServerConfig -Host "netbox.domain.com" -APIToken (Read-Host -AsSecureString "Enter API Token")` Configure 
+4. `Get-NBObject -ObjectType "dcim/devices"` Example command to get devices from NetBox
 
-- `src/NetBoxPS.Sdk/` – wraps OpenAPI Generator and houses the generated C# client. This project orchestrates fetching and
-  patching the schema, then emits SDK sources during the build.
-- `src/NetBoxPS.CodeGen/` – a .NET console app that will eventually reflect over the SDK and emit PowerShell-friendly wrappers.
-  (Only scaffolding exists today.)
-- `src/NetBoxPS.Module/` – a `Microsoft.Build.NoTargets` project that ties everything together and copies the generated module to
-  `src/NetBoxPS.Module/module/` for inspection and packaging.
+## Concept
 
-## Prerequisites
+NetboxPS is a thin wrapper around the NetBox API that provides just enough structure for standard operations while making the project not a nightmare to maintain. 
 
-The toolchain has been aligned so the same workflow works on Windows, macOS, and Linux:
+### Object Types
 
-- [.NET SDK 8.0+](https://dotnet.microsoft.com/) – builds all three projects.
-  - In Codespaces/Codex environments without the SDK preinstalled, run
-    `scripts/install-dotnet.sh` to add the official Microsoft package feed and
-    install `dotnet-sdk-8.0`. The script prints `dotnet --info` on success so
-    you can verify the toolchain is ready.
-- [PowerShell 7+ (`pwsh`)](https://learn.microsoft.com/powershell/) – runs the schema patch script. Override with
-  `/p:PowerShellExe=powershell` if you must use Windows PowerShell 5.1.
-- [Node.js + npm](https://nodejs.org/) – supplies `npx` for OpenAPI Generator.
-- [`java`](https://openjdk.org/) (11 or newer) – required by OpenAPI Generator.
-- [`curl`](https://curl.se/) – downloads the NetBox schema.
+`Get-NBObject -ObjectType "dcim/devices"`
 
-The SDK project checks for these tools up front and fails fast with actionable messages.
+Specify the `-ObjectType` parameter with the relative /api path from the NetBox API documentation. You can find the full API schema of your instance at `https://your-instance-hostname/api/schema/swagger-ui/` (replace with your NetBox URL).
 
-## Building
+### NBObject
 
-```bash
-dotnet build NetBoxPS.sln
+`Get-NBObject -ObjectType "dcim/devices"` returns an array of objects
+
+`Get-NBObject -ObjectType "dcim/devices" -ID 13` returns 1 object accessed by ID
+
+`Get-NBObject -ObjectType "dcim/devices" -Filter @{ name = "server01"; status = "active" }` returns an array of objects filtered by the specified parameters
+
+### Operations
+
+- `Get-NBObject` - Retrieve objects from NetBox (All, by ID, or filtered)
+- `New-NBObject` - Create new objects in NetBox
+- `Set-NBObject` - Update only the specified properties of existing objects in NetBox (by ID)
+- `Update-NBObject` - Replace existing objects in NetBox with the exact properties (by ID)
+- `Remove-NBObject` - Delete objects from NetBox (by ID)
+
+### Piping
+
+When you pipe an object into `Set-NBObject`, `Update-NBObject`, or `Remove-NBObject`, the cmdlet will automatically pass the ObjectType and ID parameters from `Get-NBObject`.
+
+### Initialize-NBServerConfig
+
+`Initialize-NBServerConfig -Host "netbox.domain.com" -APIToken (Read-Host -AsSecureString "Enter API Token")`
+
+This command initializes the server configuration into memory for the current session. You can also save the configuration to disk for future sessions by adding the `-SaveToDisk` parameter. The configuration (including API key) is saved to a file in the user's home directory named `.netboxpsconfig.json` in PLAIN TEXT (be careful).
+
+If you call a NetBoxPS cmdlet and no server configuration is found in memory, it will attempt to load the configuration from the `.netboxpsconfig.json` file in the user's home directory. Otherwise you will get an error indicating no server configuration is found.
+
+## Example Usage
+
+```powershell
+# Create a device
+New-NBObject -ObjectType "dcim/devices" -Body @{
+    name = "server02"
+    status = "active"
+}
+
+# Update via pipeline
+Get-NBObject -ObjectType "dcim/devices" -ID 13 |
+Set-NBObject -Body @{ status = "offline" }
+
+# Delete via pipeline
+Get-NBObject -ObjectType "dcim/devices" -Filter @{ name = "server02" } |
+Remove-NBObject
+
+# List devices
+Get-NBObject -ObjectType "dcim/devices"
+
+# Filter devices
+Get-NBObject -ObjectType "dcim/devices" -Filter @{ status = "active" }
 ```
-
-The solution build performs the following steps:
-
-1. Restore and compile the OpenAPI-driven SDK in `src/NetBoxPS.Sdk/`.
-2. Build the `NetBoxPS.CodeGen` console app (ready for future reflection-based generation).
-3. Run `NetBoxPS.Module`, which invokes the code generator via `dotnet run` and stages the resulting module in
-   `src/NetBoxPS.Module/module/` and `src/NetBoxPS.Module/bin/<Configuration>/module/`.
-
-Because the build is MSBuild-based, you can target a specific configuration with `-c Release` and the process works from PowerShell
-(`pwsh`), Bash, or any shell with the .NET CLI available.
-
-### Incremental builds
-
-The SDK project only re-fetches or regenerates the OpenAPI assets when inputs change. Likewise, the module project uses a stamped
-output folder so repeated `dotnet build` runs stay fast.
-
-### Cleaning up
-
-Use `dotnet clean` to remove generated artifacts. This clears the schema cache, the generated SDK files, and the staged module.
-
-## Customising the environment
-
-- To run the schema patcher with Windows PowerShell, supply `/p:PowerShellExe=powershell` when building the SDK or solution.
-- To inspect the generated SDK, look under `src/NetBoxPS.Sdk/Generated/` after a successful build.
-- Module artifacts are staged beneath `src/NetBoxPS.Module/module/` and can be imported locally for experimentation once future
-  code-generation logic is in place.
