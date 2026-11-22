@@ -1,0 +1,43 @@
+name: Publish to PowerShell Gallery
+
+# Push a tag like v0.1.2 to publish that version. The tag sets ModuleVersion,
+# so the version in NetboxRest.psd1 doesn't need to be bumped by hand.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set ModuleVersion from tag
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(?<ver>\d+\.\d+\.\d+)$') {
+            throw "Tag '$tag' must look like v1.2.3."
+          }
+          $version = $Matches.ver
+          $path = './NetboxRest/NetboxRest.psd1'
+          $content = Get-Content $path -Raw
+          $updated = $content -replace "ModuleVersion\s*=\s*'[^']*'", "ModuleVersion     = '$version'"
+          if ($updated -eq $content -and $content -notmatch "ModuleVersion\s*=\s*'$([regex]::Escape($version))'") {
+            throw "Could not find ModuleVersion in $path."
+          }
+          Set-Content -Path $path -Value $updated -NoNewline
+          $manifest = Test-ModuleManifest -Path $path -ErrorAction Stop
+          Write-Host "Publishing NetboxRest $($manifest.Version)"
+
+      - name: Publish module
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) { throw 'The PSGALLERY_API_KEY repository secret is not set.' }
+          Publish-Module -Path ./NetboxRest -NuGetApiKey $env:PSGALLERY_API_KEY -Repository PSGallery -Verbose
