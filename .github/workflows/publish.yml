@@ -1,0 +1,46 @@
+name: Publish to PowerShell Gallery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'NetboxRest/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-psgallery
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check manifest and compare with gallery version
+        id: version
+        shell: pwsh
+        run: |
+          $manifest = Test-ModuleManifest -Path ./NetboxRest/NetboxRest.psd1 -ErrorAction Stop
+          $local = $manifest.Version
+          $published = (Find-Module -Name NetboxRest -Repository PSGallery -ErrorAction SilentlyContinue).Version
+          Write-Host "Manifest version: $local"
+          Write-Host "Gallery version:  $published"
+          if ($published -and [version]$published -ge $local) {
+            Write-Host "::notice::NetboxRest $local is already on the PowerShell Gallery. Bump ModuleVersion in NetboxRest.psd1 to publish."
+            "publish=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "publish=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Publish module
+        if: steps.version.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) { throw 'The PSGALLERY_API_KEY repository secret is not set.' }
+          Publish-Module -Path ./NetboxRest -NuGetApiKey $env:PSGALLERY_API_KEY -Repository PSGallery -Verbose
