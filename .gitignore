@@ -1,0 +1,22 @@
+# Saved NetboxRest config (contains the API token in plain text)
+.netboxrestconfig.json
+
+# Build / publish output
+out/
+output/
+*.nupkg
+
+# Pester test results
+TestResults.xml
+testResults.xml
+coverage.xml
+
+# Editors and OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
